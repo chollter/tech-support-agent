@@ -75,24 +75,6 @@ public class LlmGateway {
         }
     }
 
-    /**
-     * @deprecated 治理已收敛到 {@link com.gcll.ticketagent.resilience.ExternalCallGateway}，
-     * 新代码应经 {@link com.gcll.ticketagent.resilience.LlmCallExecutor#execute} 调用。
-     * 本方法保留仅为过渡期兼容，委托 {@link #invoke} 且<b>不再治理</b>（无重试/超时）。
-     */
-    @Deprecated
-    public LlmCallResult call(String promptFile, String userContent) {
-        long start = System.currentTimeMillis();
-        try {
-            LlmResponse response = invoke(promptFile, userContent);
-            long latency = System.currentTimeMillis() - start;
-            return new LlmCallResult(response.content(), latency,
-                    response.promptTokens(), response.completionTokens());
-        } catch (NonRetryableCallException | RetryableCallException ex) {
-            throw new LlmCallException(ex.getMessage(), ex);
-        }
-    }
-
     private String loadPrompt(String promptFile) throws IOException {
         return new ClassPathResource("prompts/" + promptFile).getContentAsString(StandardCharsets.UTF_8);
     }

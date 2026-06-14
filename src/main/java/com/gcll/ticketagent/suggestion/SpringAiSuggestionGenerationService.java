@@ -3,13 +3,13 @@ package com.gcll.ticketagent.suggestion;
 import com.gcll.ticketagent.analysis.RootCauseResult;
 import com.gcll.ticketagent.extract.TicketExtractResult;
 import com.gcll.ticketagent.knowledge.KnowledgeHit;
-import com.gcll.ticketagent.llm.LlmCallResult;
-import com.gcll.ticketagent.llm.LlmGateway;
 import com.gcll.ticketagent.llm.StepOutcome;
 import com.gcll.ticketagent.llm.StructuredOutputParser;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.LlmCallExecutor;
+import com.gcll.ticketagent.resilience.LlmResponse;
 import com.gcll.ticketagent.tool.ToolResult;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -19,16 +19,16 @@ import java.util.List;
 @Primary
 public class SpringAiSuggestionGenerationService implements SuggestionGenerationService {
 
-    private final ObjectProvider<LlmGateway> llmGatewayProvider;
+    private final LlmCallExecutor llmCallExecutor;
     private final StructuredOutputParser parser;
     private final TemplateSuggestionGenerationService fallback;
 
     public SpringAiSuggestionGenerationService(
-            ObjectProvider<LlmGateway> llmGatewayProvider,
+            LlmCallExecutor llmCallExecutor,
             StructuredOutputParser parser,
             TemplateSuggestionGenerationService fallback
     ) {
-        this.llmGatewayProvider = llmGatewayProvider;
+        this.llmCallExecutor = llmCallExecutor;
         this.parser = parser;
         this.fallback = fallback;
     }
@@ -36,14 +36,14 @@ public class SpringAiSuggestionGenerationService implements SuggestionGeneration
     @Override
     public StepOutcome<TicketSuggestion> generate(TicketExtractResult extract, List<KnowledgeHit> hits,
                                                   List<ToolResult> toolResults, RootCauseResult rootCause) {
-        LlmGateway llmGateway = llmGatewayProvider.getIfAvailable();
-        if (llmGateway == null) {
-            return fallback.generate(extract, hits, toolResults, rootCause);
-        }
         try {
             String context = buildContext(extract, hits, toolResults, rootCause);
-            LlmCallResult result = llmGateway.call("suggestion-generate.txt", context);
-            SuggestionJson json = parser.parse(result.content(), SuggestionJson.class);
+            CallResult<LlmResponse> result = llmCallExecutor.execute(
+                    "llm.suggestion", "suggestion-generate.txt", context);
+            if (!result.success()) {
+                return fallback.generate(extract, hits, toolResults, rootCause);
+            }
+            SuggestionJson json = parser.parse(result.value().content(), SuggestionJson.class);
             TicketSuggestion suggestion = new TicketSuggestion(
                     json.summary(),
                     nullToEmpty(json.possibleCauses()),
@@ -53,7 +53,7 @@ public class SpringAiSuggestionGenerationService implements SuggestionGeneration
                     json.risks() == null ? List.of() : json.risks(),
                     json.sources() == null ? List.of() : json.sources()
             );
-            return StepOutcome.llm(suggestion, result.latencyMs());
+            return StepOutcome.llm(suggestion, result.durationMs());
         } catch (Exception ex) {
             return fallback.generate(extract, hits, toolResults, rootCause);
         }

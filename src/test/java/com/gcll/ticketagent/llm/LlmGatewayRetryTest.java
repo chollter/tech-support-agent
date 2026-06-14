@@ -47,17 +47,4 @@ class LlmGatewayRetryTest {
         assertThatThrownBy(() -> llmGateway.invoke("ticket-extract.txt", "test"))
                 .isInstanceOf(RetryableCallException.class);
     }
-
-    @Test
-    void callWrapsClassifiedExceptionAsLlmCallExceptionForBackwardCompat() {
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.system(anyString())).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenThrow(new RuntimeException("transient failure"));
-
-        // @Deprecated call() 委托 invoke 并把分类异常包装回 LlmCallException，
-        // 保持 8 个尚未迁移的 service 的 catch(LlmCallException) 兼容（Task 10 迁移后删除）。
-        assertThatThrownBy(() -> llmGateway.call("ticket-extract.txt", "test"))
-                .isInstanceOf(LlmCallException.class);
-    }
 }

@@ -3,19 +3,22 @@ package com.gcll.ticketagent.understanding.completeness;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gcll.ticketagent.extract.IssueType;
 import com.gcll.ticketagent.extract.TicketExtractResult;
-import com.gcll.ticketagent.llm.LlmGateway;
 import com.gcll.ticketagent.llm.StructuredOutputParser;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.LlmCallExecutor;
+import com.gcll.ticketagent.resilience.NonRetryableCallException;
 import com.gcll.ticketagent.understanding.followup.FollowUpQuestionService;
 import com.gcll.ticketagent.understanding.followup.LlmFollowUpProvider;
 import com.gcll.ticketagent.understanding.followup.TemplateFollowUpProvider;
 import com.gcll.ticketagent.understanding.gap.RuleBasedInfoGapAnalysisService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.ObjectProvider;
+import org.mockito.Mockito;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.anyString;
 
 class CompletenessDecisionServiceTest {
 
@@ -25,30 +28,15 @@ class CompletenessDecisionServiceTest {
     @BeforeEach
     void setUp() {
         SchemaCompletenessChecker schemaCompletenessChecker = new SchemaCompletenessChecker();
-        ObjectProvider<LlmGateway> noLlm = new ObjectProvider<>() {
-            @Override
-            public LlmGateway getObject(Object... args) {
-                return null;
-            }
-
-            @Override
-            public LlmGateway getIfAvailable() {
-                return null;
-            }
-
-            @Override
-            public LlmGateway getIfUnique() {
-                return null;
-            }
-
-            @Override
-            public LlmGateway getObject() {
-                return null;
-            }
-        };
+        // LlmFollowUpProvider 现在依赖 LlmCallExecutor；mock 一个总是失败的执行器模拟"LLM 不可用"，
+        // LlmFollowUpProvider.generate 走 List.of()。本测试关注 CompletenessDecisionService，
+        // 追问由 TemplateFollowUpProvider 提供，与 LLM 路径无关。
+        LlmCallExecutor noLlmExecutor = Mockito.mock(LlmCallExecutor.class);
+        Mockito.when(noLlmExecutor.execute(anyString(), anyString(), anyString()))
+                .thenReturn(CallResult.fail(new NonRetryableCallException("no llm"), 0, 0L));
         FollowUpQuestionService followUpQuestionService = new FollowUpQuestionService(
                 new TemplateFollowUpProvider(),
-                new LlmFollowUpProvider(noLlm, new StructuredOutputParser(new ObjectMapper()), new ObjectMapper())
+                new LlmFollowUpProvider(noLlmExecutor, new StructuredOutputParser(new ObjectMapper()), new ObjectMapper())
         );
         infoGapAnalysisService = new RuleBasedInfoGapAnalysisService(schemaCompletenessChecker);
         service = new CompletenessDecisionService(schemaCompletenessChecker, followUpQuestionService);

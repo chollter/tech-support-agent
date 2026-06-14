@@ -4,11 +4,11 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gcll.ticketagent.extract.IssueType;
 import com.gcll.ticketagent.extract.TicketExtractResult;
-import com.gcll.ticketagent.llm.LlmCallResult;
-import com.gcll.ticketagent.llm.LlmGateway;
 import com.gcll.ticketagent.llm.StepOutcome;
 import com.gcll.ticketagent.llm.StructuredOutputParser;
-import org.springframework.beans.factory.ObjectProvider;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.LlmCallExecutor;
+import com.gcll.ticketagent.resilience.LlmResponse;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -19,18 +19,18 @@ import java.util.List;
 @Primary
 public class SpringAiAgentPlanner implements AgentPlanner {
 
-    private final ObjectProvider<LlmGateway> llmGatewayProvider;
+    private final LlmCallExecutor llmCallExecutor;
     private final StructuredOutputParser parser;
     private final ObjectMapper objectMapper;
     private final RuleBasedAgentPlanner fallback;
 
     public SpringAiAgentPlanner(
-            ObjectProvider<LlmGateway> llmGatewayProvider,
+            LlmCallExecutor llmCallExecutor,
             StructuredOutputParser parser,
             ObjectMapper objectMapper,
             RuleBasedAgentPlanner fallback
     ) {
-        this.llmGatewayProvider = llmGatewayProvider;
+        this.llmCallExecutor = llmCallExecutor;
         this.parser = parser;
         this.objectMapper = objectMapper;
         this.fallback = fallback;
@@ -41,14 +41,14 @@ public class SpringAiAgentPlanner implements AgentPlanner {
         if (extract.issueType() == IssueType.CONSULT) {
             return fallback.plan(userContent, extract);
         }
-        LlmGateway llmGateway = llmGatewayProvider.getIfAvailable();
-        if (llmGateway == null) {
-            return fallback.plan(userContent, extract);
-        }
         try {
             String input = buildInput(userContent, extract);
-            LlmCallResult result = llmGateway.call("agent-plan.txt", input);
-            PlanJson json = parser.parse(result.content(), PlanJson.class);
+            CallResult<LlmResponse> result = llmCallExecutor.execute(
+                    "llm.agent-plan", "agent-plan.txt", input);
+            if (!result.success()) {
+                return fallback.plan(userContent, extract);
+            }
+            PlanJson json = parser.parse(result.value().content(), PlanJson.class);
             AgentPlan plan = new AgentPlan(
                     sanitizeActions(json.actions()),
                     sanitizeActions(json.skipped()),
@@ -58,7 +58,7 @@ public class SpringAiAgentPlanner implements AgentPlanner {
             if (plan.actions().isEmpty()) {
                 return fallback.plan(userContent, extract);
             }
-            return StepOutcome.llm(plan, result.latencyMs());
+            return StepOutcome.llm(plan, result.durationMs());
         } catch (Exception ex) {
             return fallback.plan(userContent, extract);
         }

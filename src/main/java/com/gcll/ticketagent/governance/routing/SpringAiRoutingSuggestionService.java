@@ -4,11 +4,11 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gcll.ticketagent.extract.TicketExtractResult;
 import com.gcll.ticketagent.knowledge.KnowledgeHit;
-import com.gcll.ticketagent.llm.LlmCallResult;
-import com.gcll.ticketagent.llm.LlmGateway;
 import com.gcll.ticketagent.llm.StepOutcome;
 import com.gcll.ticketagent.llm.StructuredOutputParser;
-import org.springframework.beans.factory.ObjectProvider;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.LlmCallExecutor;
+import com.gcll.ticketagent.resilience.LlmResponse;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -25,18 +25,18 @@ public class SpringAiRoutingSuggestionService implements RoutingSuggestionServic
             "安全合规组", "财务系统组", "业务研发值班组", "研发值班组"
     );
 
-    private final ObjectProvider<LlmGateway> llmGatewayProvider;
+    private final LlmCallExecutor llmCallExecutor;
     private final StructuredOutputParser parser;
     private final ObjectMapper objectMapper;
     private final RuleBasedRoutingSuggestionService fallback;
 
     public SpringAiRoutingSuggestionService(
-            ObjectProvider<LlmGateway> llmGatewayProvider,
+            LlmCallExecutor llmCallExecutor,
             StructuredOutputParser parser,
             ObjectMapper objectMapper,
             RuleBasedRoutingSuggestionService fallback
     ) {
-        this.llmGatewayProvider = llmGatewayProvider;
+        this.llmCallExecutor = llmCallExecutor;
         this.parser = parser;
         this.objectMapper = objectMapper;
         this.fallback = fallback;
@@ -49,14 +49,14 @@ public class SpringAiRoutingSuggestionService implements RoutingSuggestionServic
             List<KnowledgeHit> hits,
             RoutingResult ruleBaseline
     ) {
-        LlmGateway llmGateway = llmGatewayProvider.getIfAvailable();
-        if (llmGateway == null) {
-            return fallback.suggest(userContent, extract, hits, ruleBaseline);
-        }
         try {
             String input = buildInput(userContent, extract, hits, ruleBaseline);
-            LlmCallResult result = llmGateway.call("routing-suggest.txt", input);
-            SuggestJson json = parser.parse(result.content(), SuggestJson.class);
+            CallResult<LlmResponse> result = llmCallExecutor.execute(
+                    "llm.routing-suggest", "routing-suggest.txt", input);
+            if (!result.success()) {
+                return fallback.suggest(userContent, extract, hits, ruleBaseline);
+            }
+            SuggestJson json = parser.parse(result.value().content(), SuggestJson.class);
             if (json.suggestedPrimaryTeam() == null || json.suggestedPrimaryTeam().isBlank()) {
                 return fallback.suggest(userContent, extract, hits, ruleBaseline);
             }
@@ -68,7 +68,7 @@ public class SpringAiRoutingSuggestionService implements RoutingSuggestionServic
                     json.confidence(),
                     true
             );
-            return StepOutcome.llm(suggestion, result.latencyMs());
+            return StepOutcome.llm(suggestion, result.durationMs());
         } catch (Exception ex) {
             return fallback.suggest(userContent, extract, hits, ruleBaseline);
         }

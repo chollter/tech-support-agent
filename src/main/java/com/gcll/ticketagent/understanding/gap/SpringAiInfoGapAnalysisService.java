@@ -3,12 +3,12 @@ package com.gcll.ticketagent.understanding.gap;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gcll.ticketagent.extract.TicketExtractResult;
-import com.gcll.ticketagent.llm.LlmCallResult;
-import com.gcll.ticketagent.llm.LlmGateway;
 import com.gcll.ticketagent.llm.StepOutcome;
 import com.gcll.ticketagent.llm.StructuredOutputParser;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.LlmCallExecutor;
+import com.gcll.ticketagent.resilience.LlmResponse;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -23,18 +23,18 @@ public class SpringAiInfoGapAnalysisService implements InfoGapAnalysisService {
             除上述字段外，还应识别语义层面缺口（如偶发/必现、批处理 Job 名、结算窗口影响、读写接口类型等）。
             """;
 
-    private final ObjectProvider<LlmGateway> llmGatewayProvider;
+    private final LlmCallExecutor llmCallExecutor;
     private final StructuredOutputParser parser;
     private final ObjectMapper objectMapper;
     private final RuleBasedInfoGapAnalysisService fallback;
 
     public SpringAiInfoGapAnalysisService(
-            ObjectProvider<LlmGateway> llmGatewayProvider,
+            LlmCallExecutor llmCallExecutor,
             StructuredOutputParser parser,
             ObjectMapper objectMapper,
             RuleBasedInfoGapAnalysisService fallback
     ) {
-        this.llmGatewayProvider = llmGatewayProvider;
+        this.llmCallExecutor = llmCallExecutor;
         this.parser = parser;
         this.objectMapper = objectMapper;
         this.fallback = fallback;
@@ -42,14 +42,14 @@ public class SpringAiInfoGapAnalysisService implements InfoGapAnalysisService {
 
     @Override
     public StepOutcome<InfoGapAnalysis> analyze(String userContent, TicketExtractResult extract) {
-        LlmGateway llmGateway = llmGatewayProvider.getIfAvailable();
-        if (llmGateway == null) {
-            return fallback.analyze(userContent, extract);
-        }
         try {
             String input = buildInput(userContent, extract);
-            LlmCallResult result = llmGateway.call("info-gap-analysis.txt", input);
-            GapJson json = parser.parse(result.content(), GapJson.class);
+            CallResult<LlmResponse> result = llmCallExecutor.execute(
+                    "llm.info-gap", "info-gap-analysis.txt", input);
+            if (!result.success()) {
+                return fallback.analyze(userContent, extract);
+            }
+            GapJson json = parser.parse(result.value().content(), GapJson.class);
             InfoGapAnalysis analysis = new InfoGapAnalysis(
                     json.schemaMissing() == null ? List.of() : json.schemaMissing(),
                     json.semanticGaps() == null ? List.of() : json.semanticGaps(),
@@ -59,7 +59,7 @@ public class SpringAiInfoGapAnalysisService implements InfoGapAnalysisService {
                     json.confidence(),
                     true
             );
-            return StepOutcome.llm(analysis, result.latencyMs());
+            return StepOutcome.llm(analysis, result.durationMs());
         } catch (Exception ex) {
             return fallback.analyze(userContent, extract);
         }

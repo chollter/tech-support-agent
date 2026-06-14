@@ -1,11 +1,11 @@
 package com.gcll.ticketagent.extract;
 
-import com.gcll.ticketagent.llm.LlmCallResult;
-import com.gcll.ticketagent.llm.LlmGateway;
 import com.gcll.ticketagent.llm.StepOutcome;
 import com.gcll.ticketagent.llm.StructuredOutputParser;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.LlmCallExecutor;
+import com.gcll.ticketagent.resilience.LlmResponse;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -15,16 +15,16 @@ import java.util.List;
 @Primary
 public class SpringAiTicketExtractService implements TicketExtractService {
 
-    private final ObjectProvider<LlmGateway> llmGatewayProvider;
+    private final LlmCallExecutor llmCallExecutor;
     private final StructuredOutputParser parser;
     private final RuleBasedTicketExtractService fallback;
 
     public SpringAiTicketExtractService(
-            ObjectProvider<LlmGateway> llmGatewayProvider,
+            LlmCallExecutor llmCallExecutor,
             StructuredOutputParser parser,
             RuleBasedTicketExtractService fallback
     ) {
-        this.llmGatewayProvider = llmGatewayProvider;
+        this.llmCallExecutor = llmCallExecutor;
         this.parser = parser;
         this.fallback = fallback;
     }
@@ -35,13 +35,13 @@ public class SpringAiTicketExtractService implements TicketExtractService {
         if (ruleOutcome.value().issueType() == IssueType.CONSULT) {
             return ruleOutcome;
         }
-        LlmGateway llmGateway = llmGatewayProvider.getIfAvailable();
-        if (llmGateway == null) {
-            return fallback.extract(content);
-        }
         try {
-            LlmCallResult result = llmGateway.call("ticket-extract.txt", content);
-            ExtractJson json = parser.parse(result.content(), ExtractJson.class);
+            CallResult<LlmResponse> result = llmCallExecutor.execute(
+                    "llm.ticket-extract", "ticket-extract.txt", content);
+            if (!result.success()) {
+                return fallback.extract(content);
+            }
+            ExtractJson json = parser.parse(result.value().content(), ExtractJson.class);
             TicketExtractResult extracted = new TicketExtractResult(
                     IssueType.valueOf(json.issueType()),
                     json.affectedSystem(),
@@ -56,7 +56,7 @@ public class SpringAiTicketExtractService implements TicketExtractService {
                     json.severitySignals() == null ? List.of() : json.severitySignals(),
                     json.confidence()
             );
-            return StepOutcome.llm(extracted, result.latencyMs());
+            return StepOutcome.llm(extracted, result.durationMs());
         } catch (Exception ex) {
             return fallback.extract(content);
         }

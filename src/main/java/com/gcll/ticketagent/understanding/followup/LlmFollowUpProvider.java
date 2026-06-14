@@ -3,10 +3,10 @@ package com.gcll.ticketagent.understanding.followup;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.gcll.ticketagent.extract.TicketExtractResult;
-import com.gcll.ticketagent.llm.LlmCallResult;
-import com.gcll.ticketagent.llm.LlmGateway;
 import com.gcll.ticketagent.llm.StructuredOutputParser;
-import org.springframework.beans.factory.ObjectProvider;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.LlmCallExecutor;
+import com.gcll.ticketagent.resilience.LlmResponse;
 import org.springframework.stereotype.Component;
 
 import java.util.Collections;
@@ -15,16 +15,16 @@ import java.util.List;
 @Component
 public class LlmFollowUpProvider {
 
-    private final ObjectProvider<LlmGateway> llmGatewayProvider;
+    private final LlmCallExecutor llmCallExecutor;
     private final StructuredOutputParser parser;
     private final ObjectMapper objectMapper;
 
     public LlmFollowUpProvider(
-            ObjectProvider<LlmGateway> llmGatewayProvider,
+            LlmCallExecutor llmCallExecutor,
             StructuredOutputParser parser,
             ObjectMapper objectMapper
     ) {
-        this.llmGatewayProvider = llmGatewayProvider;
+        this.llmCallExecutor = llmCallExecutor;
         this.parser = parser;
         this.objectMapper = objectMapper;
     }
@@ -36,14 +36,14 @@ public class LlmFollowUpProvider {
             List<String> semanticGaps,
             List<String> gapSuggestedQuestions
     ) {
-        LlmGateway llmGateway = llmGatewayProvider.getIfAvailable();
-        if (llmGateway == null) {
-            return List.of();
-        }
         try {
             String input = buildInput(userContent, extract, templateQuestions, semanticGaps, gapSuggestedQuestions);
-            LlmCallResult result = llmGateway.call("follow-up-generate.txt", input);
-            FollowUpJson json = parser.parse(result.content(), FollowUpJson.class);
+            CallResult<LlmResponse> result = llmCallExecutor.execute(
+                    "llm.follow-up", "follow-up-generate.txt", input);
+            if (!result.success()) {
+                return List.of();
+            }
+            FollowUpJson json = parser.parse(result.value().content(), FollowUpJson.class);
             return json.questions() == null ? List.of() : json.questions();
         } catch (Exception ex) {
             return List.of();

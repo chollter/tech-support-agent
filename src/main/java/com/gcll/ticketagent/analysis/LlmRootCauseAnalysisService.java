@@ -3,11 +3,11 @@ package com.gcll.ticketagent.analysis;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.gcll.ticketagent.extract.TicketExtractResult;
 import com.gcll.ticketagent.knowledge.KnowledgeHit;
-import com.gcll.ticketagent.llm.LlmCallResult;
-import com.gcll.ticketagent.llm.LlmGateway;
 import com.gcll.ticketagent.llm.StructuredOutputParser;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.LlmCallExecutor;
+import com.gcll.ticketagent.resilience.LlmResponse;
 import com.gcll.ticketagent.tool.ToolResult;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
@@ -17,30 +17,30 @@ import java.util.List;
 @Primary
 public class LlmRootCauseAnalysisService implements RootCauseAnalysisService {
 
-    private final ObjectProvider<LlmGateway> llmGatewayProvider;
+    private final LlmCallExecutor llmCallExecutor;
     private final StructuredOutputParser parser;
     private final RuleBasedRootCauseAnalysisService fallback;
 
     public LlmRootCauseAnalysisService(
-            ObjectProvider<LlmGateway> llmGatewayProvider,
+            LlmCallExecutor llmCallExecutor,
             StructuredOutputParser parser,
             RuleBasedRootCauseAnalysisService fallback
     ) {
-        this.llmGatewayProvider = llmGatewayProvider;
+        this.llmCallExecutor = llmCallExecutor;
         this.parser = parser;
         this.fallback = fallback;
     }
 
     @Override
     public RootCauseResult analyze(TicketExtractResult extract, List<KnowledgeHit> hits, List<ToolResult> toolResults) {
-        LlmGateway llmGateway = llmGatewayProvider.getIfAvailable();
-        if (llmGateway == null) {
-            return fallback.analyze(extract, hits, toolResults);
-        }
         try {
             String context = buildContext(extract, hits, toolResults);
-            LlmCallResult result = llmGateway.call("root-cause-analysis.txt", context);
-            RootCauseJson json = parser.parse(result.content(), RootCauseJson.class);
+            CallResult<LlmResponse> result = llmCallExecutor.execute(
+                    "llm.root-cause", "root-cause-analysis.txt", context);
+            if (!result.success()) {
+                return fallback.analyze(extract, hits, toolResults);
+            }
+            RootCauseJson json = parser.parse(result.value().content(), RootCauseJson.class);
             return new RootCauseResult(
                     blankToDefault(json.hypothesis(), "根因待确认，需进一步排查"),
                     nullToEmpty(json.evidence()),
