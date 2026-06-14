@@ -286,13 +286,15 @@ RAG 是**调查步骤**，不是最终答案生成器。
 
 ### 7.2 可靠性
 
-【必须】外部调用有超时，禁止无限等待。
+【必须】所有外部调用（LLM / 向量检索 / MCP 工具）经 `ExternalCallGateway` 统一治理；禁止在业务层手写重试 / 超时 / 熔断 / `future.get`。
 
-【必须】LLM、RAG、MCP、向量库失败时可解释降级。
+【必须】外部调用超时分层生效：HTTP 层 socket readTimeout（DashScope `spring.ai.dashscope.read-timeout`）是底线，Resilience4j TimeLimiter 是应用级补充（其 cancel 对阻塞 IO 无效，靠 HTTP 层兜底）。
 
-【必须】只对可重试错误重试，避免重复副作用。
+【必须】LLM、RAG、MCP、向量库失败时可解释降级（每个 SpringAi service 有 RuleBased fallback）。
 
-【必须】日志、指标带 runId / traceId；关键步骤记录 costMs、errorMessage。
+【必须】只对可重试错误重试：执行器（如 `LlmGateway`）把底层异常翻译为 `RetryableCallException` / `NonRetryableCallException`；工具调用默认不重试（有副作用）。
+
+【必须】日志、指标带 runId / traceId；外部调用统一经 `CallMetrics` 埋点 `external_call_duration` / `ai_token_usage`，禁止业务层手动埋 LLM 耗时。
 
 ### 7.3 代码规范（OpsMind 特有）
 

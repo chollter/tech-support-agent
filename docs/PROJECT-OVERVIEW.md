@@ -187,11 +187,11 @@ B 端内部工具，用户分层：
 按「对标高级工程师 + 求职尽快可演示」的性价比排序。
 
 ### P0 必做（不补面试露怯 / 闭环必需）
-| 项 | 价值 |
-|----|------|
-| LLM 调用工程化治理 | 超时分层生效、重试异常分类、token 解析与指标。AI 应用岗必考点 |
-| NotificationService 分发层 | 业务闭环最后一步（confirm → 通知），防腐层 + 日志实现 |
-| 意图分流前置 | CONSULT 走简化路径，省 LLM 调用，真实工程优化 |
+| 项 | 价值 | 状态 |
+|----|------|------|
+| ~~LLM 调用工程化治理~~ | 超时分层生效、重试异常分类、token 解析与指标。AI 应用岗必考点 | ✅ 已完成（ExternalCallGateway） |
+| NotificationService 分发层 | 业务闭环最后一步（confirm → 通知），防腐层 + 日志实现 | 待做 |
+| 意图分流前置 | CONSULT 走简化路径，省 LLM 调用，真实工程优化 | 待做 |
 
 ### P1 推荐（拉开「高级」差距）
 | 项 | 价值 |
@@ -218,14 +218,14 @@ B 端内部工具，用户分层：
 | MCP / Tool Use | ✅ 概念 | query_logs / query_metric，需确认是否真 MCP 协议 |
 | Agent 编排（Plan-Execute） | ✅ | 核心卖点 |
 | 结构化输出 | ✅ | StructuredOutputParser |
-| LLM 治理（超时 / 重试 / 降级） | ⚠️ | 框架在、机制有硬伤，P0 补 |
-| Token / Context Window | ❌ | 未解析，P0 补 |
+| LLM 治理（超时 / 重试 / 降级） | ✅ | ExternalCallGateway（Resilience4j）+ DashScope readTimeout 分层 |
+| Token / Context Window | ✅ | LlmGateway 解析 usage，CallMetrics 埋 ai_token_usage |
 | 评测 Eval | ✅ | 14 case，P1 打深 |
 | 可观测性 | ⚠️ | 部分，P1 补 |
 | HITL | ✅ | 治理亮点 |
 | 幂等 / 状态恢复 | ⚠️ | 幂等有、状态恢复弱，P1 补 |
 
-> **红色两行（LLM 治理 + Token）是 AI 应用岗必考点 + 当前硬伤，P0 阶段必须补。**
+> **LLM 治理 + Token 已补齐**（ExternalCallGateway + token 解析）；权衡与已知限制见 [docs/KNOWN-ISSUES.md](KNOWN-ISSUES.md)。
 
 ---
 
