@@ -1,5 +1,6 @@
 package com.gcll.ticketagent.llm;
 
+import com.gcll.ticketagent.resilience.RetryableCallException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -7,67 +8,56 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.chat.client.ChatClient;
 
-import java.util.concurrent.Executor;
-
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+/**
+ * LlmGateway 异常分类单测。
+ * <p>治理（重试/超时/熔断）由 {@link com.gcll.ticketagent.resilience.ExternalCallGateway} 负责，
+ * 已在 {@code ExternalCallGatewayTest} 覆盖；本类只验证 {@code invoke()} 的异常翻译契约。
+ */
 @ExtendWith(MockitoExtension.class)
 class LlmGatewayRetryTest {
 
     @Mock
     private ChatClient chatClient;
-
     @Mock
     private ChatClient.Builder chatClientBuilder;
-
     @Mock
     private ChatClient.ChatClientRequestSpec requestSpec;
 
-    @Mock
-    private ChatClient.CallResponseSpec callResponseSpec;
-
-    private LlmProperties llmProperties;
     private LlmGateway llmGateway;
 
     @BeforeEach
     void setUp() throws Exception {
-        llmProperties = new LlmProperties();
-        llmProperties.setMaxRetries(2);
-        llmProperties.setReadTimeoutMs(3000);
-
         when(chatClientBuilder.build()).thenReturn(chatClient);
-        Executor directExecutor = Runnable::run;
-        llmGateway = new LlmGateway(chatClientBuilder, llmProperties, directExecutor);
+        llmGateway = new LlmGateway(chatClientBuilder);
     }
 
     @Test
-    void retriesOnFailureThenThrows() {
+    void invokeTranslatesGenericExceptionToRetryable() {
         when(chatClient.prompt()).thenReturn(requestSpec);
         when(requestSpec.system(anyString())).thenReturn(requestSpec);
         when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call()).thenThrow(new RuntimeException("temporary"));
+        when(requestSpec.call()).thenThrow(new RuntimeException("transient failure"));
 
+        // invoke 把未分类的 RuntimeException 翻译为 RetryableCallException（默认可重试），
+        // 由 ExternalCallGateway 的 retry 策略决定是否真正重试。
+        assertThatThrownBy(() -> llmGateway.invoke("ticket-extract.txt", "test"))
+                .isInstanceOf(RetryableCallException.class);
+    }
+
+    @Test
+    void callWrapsClassifiedExceptionAsLlmCallExceptionForBackwardCompat() {
+        when(chatClient.prompt()).thenReturn(requestSpec);
+        when(requestSpec.system(anyString())).thenReturn(requestSpec);
+        when(requestSpec.user(anyString())).thenReturn(requestSpec);
+        when(requestSpec.call()).thenThrow(new RuntimeException("transient failure"));
+
+        // @Deprecated call() 委托 invoke 并把分类异常包装回 LlmCallException，
+        // 保持 8 个尚未迁移的 service 的 catch(LlmCallException) 兼容（Task 10 迁移后删除）。
         assertThatThrownBy(() -> llmGateway.call("ticket-extract.txt", "test"))
                 .isInstanceOf(LlmCallException.class);
-        verify(requestSpec, times(3)).call();
-    }
-
-    @Test
-    void succeedsOnSecondAttempt() {
-        when(chatClient.prompt()).thenReturn(requestSpec);
-        when(requestSpec.system(anyString())).thenReturn(requestSpec);
-        when(requestSpec.user(anyString())).thenReturn(requestSpec);
-        when(requestSpec.call())
-                .thenThrow(new RuntimeException("temporary"))
-                .thenReturn(callResponseSpec);
-        when(callResponseSpec.content()).thenReturn("ok");
-
-        LlmCallResult result = llmGateway.call("ticket-extract.txt", "test");
-        org.assertj.core.api.Assertions.assertThat(result.content()).isEqualTo("ok");
-        verify(requestSpec, times(2)).call();
     }
 }
