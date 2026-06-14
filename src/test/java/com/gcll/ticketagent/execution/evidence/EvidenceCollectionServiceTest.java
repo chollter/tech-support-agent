@@ -4,13 +4,21 @@ import com.gcll.ticketagent.execution.tool.ToolSelection;
 import com.gcll.ticketagent.extract.IssueType;
 import com.gcll.ticketagent.extract.TicketExtractResult;
 import com.gcll.ticketagent.persistence.repository.ToolExecutionLogRepository;
+import com.gcll.ticketagent.resilience.CallMetrics;
+import com.gcll.ticketagent.resilience.CallRegistry;
+import com.gcll.ticketagent.resilience.ExternalCallGateway;
 import com.gcll.ticketagent.tool.ToolGateway;
 import com.gcll.ticketagent.tool.ToolRegistry;
 import com.gcll.ticketagent.tool.ToolResult;
 import com.gcll.ticketagent.tool.ToolType;
+import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
+import io.github.resilience4j.retry.RetryRegistry;
+import io.github.resilience4j.timelimiter.TimeLimiterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.concurrent.Executors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,6 +32,16 @@ import static org.mockito.Mockito.when;
 class EvidenceCollectionServiceTest {
 
     private final ToolExecutionLogRepository logRepository = mock(ToolExecutionLogRepository.class);
+
+    /** 空 CallRegistry（无 callMappings）→ 所有调用走 plain 路径（不治理），保留工具收集的测试语义。 */
+    private static ExternalCallGateway plainGateway() {
+        return new ExternalCallGateway(
+                new CallRegistry(RetryRegistry.ofDefaults(),
+                        TimeLimiterRegistry.ofDefaults(),
+                        CircuitBreakerRegistry.ofDefaults()),
+                new CallMetrics(new SimpleMeterRegistry()),
+                Executors.newScheduledThreadPool(1));
+    }
 
     @Test
     void collectsOnlySelectedTools() {
@@ -42,7 +60,7 @@ class EvidenceCollectionServiceTest {
         );
 
         ToolRegistry registry = new ToolRegistry(List.of(tool1, tool2));
-        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository);
+        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository, plainGateway());
 
         TicketExtractResult extract = sampleExtract();
         ToolSelection selection = new ToolSelection(List.of("query_logs"), java.util.Map.of(), "test", false);
@@ -65,7 +83,7 @@ class EvidenceCollectionServiceTest {
         );
 
         ToolRegistry registry = new ToolRegistry(List.of(failingTool));
-        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository);
+        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository, plainGateway());
 
         List<ToolResult> results = service.collect(
                 "run-002",
@@ -82,7 +100,7 @@ class EvidenceCollectionServiceTest {
     @Test
     void returnsEmptyWhenNoToolsSelected() {
         ToolRegistry registry = new ToolRegistry(List.of());
-        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository);
+        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository, plainGateway());
 
         List<ToolResult> results = service.collect(
                 "run-003",

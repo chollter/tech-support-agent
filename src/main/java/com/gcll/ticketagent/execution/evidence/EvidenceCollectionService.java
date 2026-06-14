@@ -3,6 +3,8 @@ package com.gcll.ticketagent.execution.evidence;
 import com.gcll.ticketagent.execution.tool.ToolSelection;
 import com.gcll.ticketagent.extract.TicketExtractResult;
 import com.gcll.ticketagent.persistence.repository.ToolExecutionLogRepository;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.ExternalCallGateway;
 import com.gcll.ticketagent.tool.ToolGateway;
 import com.gcll.ticketagent.tool.ToolRegistry;
 import com.gcll.ticketagent.tool.ToolResult;
@@ -20,13 +22,16 @@ public class EvidenceCollectionService {
 
     private final ToolRegistry toolRegistry;
     private final ToolExecutionLogRepository toolExecutionLogRepository;
+    private final ExternalCallGateway externalCallGateway;
 
     public EvidenceCollectionService(
             ToolRegistry toolRegistry,
-            ToolExecutionLogRepository toolExecutionLogRepository
+            ToolExecutionLogRepository toolExecutionLogRepository,
+            ExternalCallGateway externalCallGateway
     ) {
         this.toolRegistry = toolRegistry;
         this.toolExecutionLogRepository = toolExecutionLogRepository;
+        this.externalCallGateway = externalCallGateway;
     }
 
     public List<ToolResult> collect(
@@ -47,26 +52,40 @@ public class EvidenceCollectionService {
                 log.warn("Selected tool not registered, runId={}, toolName={}", runId, toolName);
                 continue;
             }
-            try {
-                ToolResult result = tool.execute(extract, originalContent);
-                results.add(result);
-                toolExecutionLogRepository.save(runId, "EVIDENCE_COLLECTION", result);
-                if (result.success()) {
-                    log.info("Tool [{}] executed successfully, durationMs={}", tool.toolName(), result.durationMs());
-                } else {
-                    log.warn("Tool [{}] failed: {}", tool.toolName(), result.errorMessage());
-                }
-            } catch (Exception ex) {
-                log.warn("Tool [{}] threw exception: {}", toolName, ex.getMessage());
-                ToolResult failure = ToolResult.failure(
-                        tool.toolType(), tool.toolName(), originalContent,
-                        ex.getMessage(), 0
-                );
-                results.add(failure);
-                toolExecutionLogRepository.save(runId, "EVIDENCE_COLLECTION", failure);
+            // 工具调用经 ExternalCallGateway 治理（tool-default：默认不重试，因工具有副作用）。
+            // 超时/熔断/异常统一由 Gateway 处理；成功用 tool 自带的 ToolResult，失败降级为 failure。
+            CallResult<ToolResult> callResult = externalCallGateway.execute(
+                    mapCallName(tool.toolName()),
+                    () -> tool.execute(extract, originalContent)
+            );
+            ToolResult result;
+            if (callResult.success()) {
+                result = callResult.value();
+            } else {
+                String reason = callResult.circuitOpen() ? "circuit open"
+                        : (callResult.error() != null ? callResult.error().getMessage() : "unknown");
+                result = ToolResult.failure(
+                        tool.toolType(), tool.toolName(), originalContent, reason, callResult.durationMs());
+            }
+            results.add(result);
+            toolExecutionLogRepository.save(runId, "EVIDENCE_COLLECTION", result);
+            if (result.success()) {
+                log.info("Tool [{}] executed successfully, durationMs={}", tool.toolName(), result.durationMs());
+            } else {
+                log.warn("Tool [{}] failed: {}", tool.toolName(), result.errorMessage());
             }
         }
 
         return results;
+    }
+
+    /** 把工具实例名映射到 opsmind.resilience.call-mappings 的策略名；未映射的走 plain 路径。 */
+    private String mapCallName(String toolName) {
+        return switch (toolName) {
+            case "query_logs" -> "tool.query-logs";
+            case "query_metric" -> "tool.query-metric";
+            case "searchSimilarCases" -> "tool.similar-cases";
+            default -> "tool.default";
+        };
     }
 }
