@@ -1,0 +1,15 @@
+请基于 AgentPlan、可用工具白名单和工单内容，选择需要执行的工具。
+
+输出 JSON（不要 markdown 代码块）：
+{
+  "selectedToolNames": ["query_metric", "query_logs"],
+  "parameters": {},
+  "reason": "OOM 场景查内存指标和 Pod 日志"
+}
+
+规则：
+- selectedToolNames 只能来自白名单：searchSimilarCases、query_logs、query_metric
+- 必须与 AgentPlan 中未 skipped 的工具类步骤一致
+- AgentPlan 中 skipped 的步骤对应工具不要选
+- KNOWLEDGE_SEARCH 不是 Tool，不要出现在 selectedToolNames
+- 不要编造工具名

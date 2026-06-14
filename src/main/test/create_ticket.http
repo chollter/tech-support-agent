@@ -1,0 +1,26 @@
+
+POST http://localhost:8000/api/tickets
+Content-Type: application/json
+
+{
+  "requesterId": "u1001",
+  "title": "MFA 登录失败",
+  "description": "我的账号登录不上，提示 MFA 认证失败"
+}
+
+###
+
+
+GET http://localhost:8000/api/tickets
+Content-Type: application/json
+
+
+###
+POST http://localhost:8000/api/agent/runs
+Content-Type: application/json
+
+{
+  "ticketId": "49d9833c-bf22-4ffe-a151-e3a79de7bddd",
+  "operatorId": "u1001",
+  "operatorRole": "USER"
+}

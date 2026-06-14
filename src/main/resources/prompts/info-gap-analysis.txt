@@ -1,0 +1,18 @@
+请基于「抽取结果 JSON」「必填字段策略」和「用户原文」，分析当前工单的信息缺口。
+
+输出 JSON 格式（不要 markdown 代码块）：
+{
+  "schemaMissing": ["environment", "timeRange"],
+  "semanticGaps": ["未说明偶发还是必现"],
+  "suggestedQuestions": ["问题是必现还是偶发？"],
+  "blockingReason": "无法判断影响面",
+  "readyForAnalysis": false,
+  "confidence": 0.35
+}
+
+规则：
+- schemaMissing 的 key 仅使用：systemOrModule、apiOrFeature、environment、errorDetail、timeRange、impactScope
+- semanticGaps 描述模板外的语义缺口（批处理 Job 名、结算窗口、读写接口类型、复现频率等）
+- suggestedQuestions 清晰、可回答，不要给出排障结论或根因猜测
+- readyForAnalysis 仅当 schema 关键字段足够且语义上可开始 RAG/取证/根因分析时为 true
+- 不要猜测未提供的信息

@@ -1,0 +1,42 @@
+# Build output
+target/
+build/
+out/
+*.class
+*.jar
+*.war
+
+# IDE - IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# IDE - Eclipse
+.settings/
+.project
+.classpath
+.factorypath
+
+# IDE - VS Code
+.vscode/
+
+# IDE - Cursor
+.cursor/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local config & secrets (env-driven; keep placeholders out of VCS)
+.env
+.env.local
+application-local.yml
+application-local.properties
+
+# Logs
+logs/
+*.log
+
+# Claude Code personal local config (team-shared settings.json is tracked)
+.claude/settings.local.json

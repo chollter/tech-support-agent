@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: tech-support-agent-test
+  datasource:
+    url: jdbc:h2:mem:tech_support_agent_test;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data-knowledge.sql
+  ai:
+    dashscope:
+      api-key: test-key
+
+opsmind:
+  redisson:
+    enabled: false

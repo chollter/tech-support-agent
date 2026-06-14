@@ -1,0 +1,71 @@
+spring:
+  application:
+    name: tech-support-agent
+  autoconfigure:
+    exclude:
+      - org.springframework.ai.autoconfigure.vectorstore.pgvector.PgVectorStoreAutoConfiguration
+      - org.springframework.ai.autoconfigure.vectorstore.milvus.MilvusVectorStoreAutoConfiguration
+  datasource:
+    url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5432}/${PG_DATABASE:tech_support_agent}
+    username: ${PG_USER:postgres}
+    password: ${PG_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+      data-locations: classpath:db/data-knowledge.sql
+  ai:
+    dashscope:
+      api-key: ${LLM_API_KEY:}
+      chat:
+        options:
+          model: ${LLM_MODEL:qwen-plus}
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: com.gcll.ticketagent.async
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: assign_uuid
+
+server:
+  port: 8020
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+
+llm:
+  connect-timeout-ms: 10000
+  read-timeout-ms: 60000
+  max-retries: 2
+
+knowledge:
+  search:
+    timeout-ms: ${KNOWLEDGE_SEARCH_TIMEOUT_MS:5000}
+
+opsmind:
+  async:
+    enabled: ${OPSMIND_ASYNC_ENABLED:false}
+    topic: ${OPSMIND_RUN_TOPIC:opsmind.agent-run.execute}
+    stuck-scan-interval-ms: ${OPSMIND_STUCK_SCAN_INTERVAL_MS:300000}
+    stuck-running-timeout-minutes: ${OPSMIND_STUCK_RUNNING_TIMEOUT_MINUTES:15}
+  input:
+    max-content-length: ${OPSMIND_MAX_CONTENT_LENGTH:8000}

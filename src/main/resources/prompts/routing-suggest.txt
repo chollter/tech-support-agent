@@ -1,0 +1,18 @@
+请基于工单内容、抽取结果和规则基线路由，给出责任团队路由建议。
+
+注意：你的输出仅为建议，最终分派由规则引擎裁决，不可 override 规则基线。
+
+输出 JSON（不要 markdown 代码块）：
+{
+  "suggestedPrimaryTeam": "支付研发组",
+  "suggestedBackupTeams": ["订单研发组", "DBA"],
+  "reason": "支付回调接口异常，主责支付研发组",
+  "confidence": 0.85
+}
+
+规则：
+- suggestedPrimaryTeam 必须来自已知团队白名单
+- 若与规则基线 primaryTeam 一致，可提高 confidence 并补充 reason
+- 若认为规则基线不合理，仍输出你的建议，但需在 reason 中说明依据
+- 不要编造团队名
+- 不要输出最终裁决结论，只输出建议

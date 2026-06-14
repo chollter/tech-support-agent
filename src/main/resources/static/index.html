@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tech Support Agent — 工单智能分析</title>
+  <link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="header-inner">
+      <h1>Tech Support Agent</h1>
+      <p class="subtitle">企业研发运维工单智能分析</p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="panel form-panel">
+      <h2>提交工单</h2>
+      <form id="submitForm">
+        <div class="field-row">
+          <label for="sessionId">会话 ID</label>
+          <input id="sessionId" name="sessionId" value="sess-web-001" required>
+        </div>
+        <div class="field-row">
+          <label for="userId">用户 ID</label>
+          <input id="userId" name="userId" value="u-1001" required>
+        </div>
+        <div class="field-row">
+          <label for="title">标题（可选）</label>
+          <input id="title" name="title" placeholder="简要标题">
+        </div>
+        <div class="field-row">
+          <label for="content">故障描述</label>
+          <textarea id="content" name="content" rows="6" required placeholder="请描述故障现象、环境、影响范围等…"></textarea>
+        </div>
+        <div class="field-row">
+          <label for="source">来源</label>
+          <select id="source" name="source">
+            <option value="WEB" selected>WEB</option>
+            <option value="IM">IM</option>
+            <option value="EMAIL">EMAIL</option>
+          </select>
+        </div>
+        <div class="btn-group">
+          <button type="submit" class="btn btn-primary" id="submitBtn">提交分析</button>
+          <button type="button" class="btn btn-ghost" id="sampleIncomplete">示例：信息不足</button>
+          <button type="button" class="btn btn-ghost" id="sampleComplete">示例：完整故障</button>
+        </div>
+      </form>
+
+      <div id="supplementSection" class="supplement hidden">
+        <h3>补充信息</h3>
+        <p class="hint">Agent 需要更多信息，请补充后重新提交：</p>
+        <textarea id="supplementContent" rows="4" placeholder="补充环境、接口、影响范围等…"></textarea>
+        <button type="button" class="btn btn-primary" id="supplementBtn">发送补充</button>
+      </div>
+    </section>
+
+    <section class="panel result-panel">
+      <h2>分析结果</h2>
+      <div id="statusBar" class="status-bar hidden">
+        <span class="status-label">Run ID</span>
+        <code id="runIdDisplay">—</code>
+        <span class="status-badge" id="statusBadge">—</span>
+        <span class="reply-badge" id="replyBadge">—</span>
+        <span id="aiBadge" class="ai-badge hidden">AI 生成</span>
+      </div>
+      <div id="messageBox" class="message-box hidden"></div>
+      <div id="questionsBox" class="questions-box hidden"></div>
+      <div id="analysisBox" class="analysis-box hidden"></div>
+      <div id="emptyState" class="empty-state">
+        <p>提交工单后，分析结果将显示在这里。</p>
+      </div>
+    </section>
+
+    <section class="panel steps-panel">
+      <div class="panel-header-row">
+        <h2>Agent 执行步骤</h2>
+        <button type="button" class="btn btn-ghost btn-sm" id="refreshAuditBtn" disabled>刷新审计</button>
+      </div>
+      <ul id="stepList" class="step-list">
+        <li class="step-empty">暂无步骤</li>
+      </ul>
+    </section>
+
+    <section class="panel eval-panel">
+      <div class="panel-header-row">
+        <h2>回归 Eval</h2>
+        <button type="button" class="btn btn-primary btn-sm" id="runEvalBtn">运行 Eval</button>
+      </div>
+      <div id="evalResult" class="eval-result">
+        <p class="hint">点击运行，验证「信息不足」与「支付故障 P1」两条核心场景。</p>
+      </div>
+    </section>
+
+    <section class="panel human-panel">
+      <div class="panel-header-row">
+        <h2>待人工确认</h2>
+        <button type="button" class="btn btn-ghost btn-sm" id="refreshPendingBtn">刷新</button>
+      </div>
+      <ul id="pendingList" class="pending-list">
+        <li class="pending-empty">暂无待确认项</li>
+      </ul>
+    </section>
+  </main>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/js/app.js"></script>
+</body>
+</html>

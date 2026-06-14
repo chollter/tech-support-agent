@@ -1,0 +1,15 @@
+请从工单内容中抽取以下 JSON 字段：
+{
+  "issueType": "INCIDENT|CONSULT|PERMISSION|DATA|REQUIREMENT|UNKNOWN",
+  "affectedSystem": "string or null",
+  "affectedModule": "string or null",
+  "apiName": "string or null",
+  "errorCode": "string or null",
+  "errorMessage": "string or null",
+  "environment": "生产|测试|预发|开发 or null",
+  "impactScope": "string or null",
+  "timeRange": "string or null",
+  "businessImpact": "string or null",
+  "severitySignals": ["PRODUCTION","CORE_PAYMENT","MULTI_USER","FINANCIAL_INCONSISTENCY"],
+  "confidence": 0.0
+}

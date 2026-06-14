@@ -1,0 +1,20 @@
+# OpsMind MCP-style tool configuration
+# Default path uses database-backed ToolGateway implementations:
+# - query_logs reads ops_log_sample
+# - query_metric reads ops_metric_sample
+
+# spring:
+#   ai:
+#     mcp:
+#       client:
+#         enabled: false
+#         name: opsmind-mcp-client
+#         version: 1.0.0
+#         request-timeout: 30s
+#         type: SYNC
+#         sse:
+#           connections:
+#             log-mcp-server:
+#               url: http://localhost:8081
+#             metric-mcp-server:
+#               url: http://localhost:8082
