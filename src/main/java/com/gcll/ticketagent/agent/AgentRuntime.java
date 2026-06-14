@@ -35,6 +35,8 @@ import com.gcll.ticketagent.knowledge.KnowledgeSearchService;
 import com.gcll.ticketagent.llm.StepOutcome;
 import com.gcll.ticketagent.metrics.AgentMetrics;
 import com.gcll.ticketagent.persistence.repository.AgentRunRepository;
+import com.gcll.ticketagent.resilience.CallResult;
+import com.gcll.ticketagent.resilience.ExternalCallGateway;
 import com.gcll.ticketagent.governance.priority.PriorityEvaluationService;
 import com.gcll.ticketagent.governance.priority.PriorityResult;
 import com.gcll.ticketagent.governance.routing.RoutingPolicyEngine;
@@ -53,9 +55,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.Collections;
 import java.util.List;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 
 @Service
 public class AgentRuntime {
@@ -81,6 +80,7 @@ public class AgentRuntime {
     private final AuditLogService auditLogService;
     private final AgentRunRepository agentRunRepository;
     private final AgentMetrics agentMetrics;
+    private final ExternalCallGateway externalCallGateway;
     private final TransactionTemplate transactionTemplate;
     private final ObjectMapper objectMapper;
 
@@ -104,6 +104,7 @@ public class AgentRuntime {
             AuditLogService auditLogService,
             AgentRunRepository agentRunRepository,
             AgentMetrics agentMetrics,
+            ExternalCallGateway externalCallGateway,
             TransactionTemplate transactionTemplate,
             ObjectMapper objectMapper
     ) {
@@ -126,6 +127,7 @@ public class AgentRuntime {
         this.auditLogService = auditLogService;
         this.agentRunRepository = agentRunRepository;
         this.agentMetrics = agentMetrics;
+        this.externalCallGateway = externalCallGateway;
         this.transactionTemplate = transactionTemplate;
         this.objectMapper = objectMapper;
     }
@@ -147,9 +149,6 @@ public class AgentRuntime {
         long extractCostMs = extractOutcome.costMs() > 0 ? extractOutcome.costMs() : System.currentTimeMillis() - start;
         auditLogService.recordStep(run, AgentStepName.TICKET_EXTRACT, draft.fullContent(), summarizeExtract(extract),
                 extractOutcome.llmUsed(), extractOutcome.llmUsed() ? "SpringAI" : null, extractCostMs, null);
-        if (extractOutcome.llmUsed()) {
-            agentMetrics.recordLlm(extractCostMs);
-        }
 
         start = System.currentTimeMillis();
         StepOutcome<InfoGapAnalysis> gapOutcome = infoGapAnalysisService.analyze(draft.fullContent(), extract);
@@ -158,9 +157,6 @@ public class AgentRuntime {
         auditLogService.recordStep(run, AgentStepName.INFO_GAP_ANALYSIS, summarizeExtract(extract),
                 summarizeGap(gap), gapOutcome.llmUsed(), gapOutcome.llmUsed() ? "SpringAI" : null,
                 gapCostMs, null);
-        if (gapOutcome.llmUsed()) {
-            agentMetrics.recordLlm(gapCostMs);
-        }
 
         start = System.currentTimeMillis();
         CompletenessDecision decision = completenessDecisionService.decide(draft.fullContent(), extract, gap);
@@ -211,9 +207,6 @@ public class AgentRuntime {
         long planCostMs = planOutcome.costMs() > 0 ? planOutcome.costMs() : System.currentTimeMillis() - start;
         auditLogService.recordStep(run, AgentStepName.AGENT_PLAN, summarizeExtract(extract), plan.auditSummary(),
                 planOutcome.llmUsed(), planOutcome.llmUsed() ? "SpringAI" : null, planCostMs, null);
-        if (planOutcome.llmUsed()) {
-            agentMetrics.recordLlm(planCostMs);
-        }
 
         List<KnowledgeHit> hits = List.of();
         if (plan.includes(AgentAction.KNOWLEDGE_SEARCH)) {
@@ -237,9 +230,6 @@ public class AgentRuntime {
         long selectionCostMs = selectionOutcome.costMs() > 0 ? selectionOutcome.costMs() : System.currentTimeMillis() - start;
         auditLogService.recordStep(run, AgentStepName.TOOL_SELECTION, plan.auditSummary(), selection.auditSummary(),
                 selectionOutcome.llmUsed(), selectionOutcome.llmUsed() ? "SpringAI" : null, selectionCostMs, null);
-        if (selectionOutcome.llmUsed()) {
-            agentMetrics.recordLlm(selectionCostMs);
-        }
 
         start = System.currentTimeMillis();
         List<ToolResult> toolResults = collectEvidenceSafely(run, extract, draft, selection);
@@ -273,9 +263,6 @@ public class AgentRuntime {
                 routingSuggestionOutcome.llmUsed(),
                 routingSuggestionOutcome.llmUsed() ? "SpringAI" : null,
                 routingCostMs, null);
-        if (routingSuggestionOutcome.llmUsed()) {
-            agentMetrics.recordLlm(routingCostMs);
-        }
 
         start = System.currentTimeMillis();
         StepOutcome<TicketSuggestion> suggestionOutcome = suggestionGenerationService.generate(extract, hits, toolResults, rootCause);
@@ -286,9 +273,6 @@ public class AgentRuntime {
                 : System.currentTimeMillis() - start;
         auditLogService.recordStep(run, AgentStepName.SUGGESTION_GENERATION, hits.toString(), suggestion.toString(),
                 suggestionOutcome.llmUsed(), suggestionOutcome.llmUsed() ? "SpringAI" : null, suggestionCostMs, null);
-        if (suggestionOutcome.llmUsed()) {
-            agentMetrics.recordLlm(suggestionCostMs);
-        }
 
         boolean aiGenerated = extractLlmUsed || rootCause.llmUsed() || routingSuggestionOutcome.llmUsed()
                 || suggestionOutcome.llmUsed();
@@ -328,34 +312,34 @@ public class AgentRuntime {
         return response;
     }
 
+    /**
+     * 向量检索经 {@link ExternalCallGateway} 治理（vector-default：retry/timelimiter/circuitbreaker）。
+     * <p>超时/熔断/异常统一由 Gateway 处理，本方法只关心业务：成功用命中，失败降级为空列表。
+     * 替代了原先的 {@code CompletableFuture + future.get(timeout)} 模式（后者对阻塞 IO 的 cancel 无效）。
+     */
     private KnowledgeSearchOutcome searchKnowledgeSafely(AgentRun run, TicketDraft draft, TicketExtractResult extract) {
-        long timeoutMs = knowledgeProperties.getTimeoutMs();
-        try {
-            CompletableFuture<List<KnowledgeHit>> future = CompletableFuture.supplyAsync(() ->
-                    knowledgeSearchService.search(
-                            draft.fullContent(),
-                            extract.affectedSystem(),
-                            extract.affectedModule(),
-                            extract.issueType().name()
-                    )
-            );
-            List<KnowledgeHit> hits = future.get(timeoutMs, TimeUnit.MILLISECONDS);
-            return new KnowledgeSearchOutcome(hits, hits.toString(), null);
-        } catch (TimeoutException ex) {
-            log.warn("Knowledge search timeout, runId={}, timeoutMs={}", run.getId(), timeoutMs);
+        CallResult<List<KnowledgeHit>> result = externalCallGateway.execute(
+                "vector.knowledge-search",
+                () -> knowledgeSearchService.search(
+                        draft.fullContent(),
+                        extract.affectedSystem(),
+                        extract.affectedModule(),
+                        extract.issueType().name()
+                )
+        );
+        if (!result.success()) {
+            String reason = result.circuitOpen() ? "circuit open"
+                    : (result.error() != null ? result.error().getMessage() : "unknown");
+            log.warn("Knowledge search degraded, runId={}, circuitOpen={}, reason={}",
+                    run.getId(), result.circuitOpen(), reason);
             return new KnowledgeSearchOutcome(
                     Collections.emptyList(),
-                    "degraded: timeout after " + timeoutMs + "ms",
-                    "Knowledge search timeout"
-            );
-        } catch (Exception ex) {
-            log.warn("Knowledge search failed, runId={}, error={}", run.getId(), ex.getMessage());
-            return new KnowledgeSearchOutcome(
-                    Collections.emptyList(),
-                    "degraded: " + ex.getMessage(),
-                    "Knowledge search failed: " + ex.getMessage()
+                    "degraded: " + reason,
+                    "Knowledge search failed: " + reason
             );
         }
+        List<KnowledgeHit> hits = result.value();
+        return new KnowledgeSearchOutcome(hits, hits.toString(), null);
     }
 
     private AgentRunResponse failRun(AgentRun run, TicketDraft draft, Exception ex) {
