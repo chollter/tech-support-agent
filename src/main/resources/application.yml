@@ -69,3 +69,58 @@ opsmind:
     stuck-running-timeout-minutes: ${OPSMIND_STUCK_RUNNING_TIMEOUT_MINUTES:15}
   input:
     max-content-length: ${OPSMIND_MAX_CONTENT_LENGTH:8000}
+  resilience:
+    call-mappings:
+      llm.ticket-extract:      { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
+      llm.info-gap:            { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
+      llm.agent-plan:          { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
+      llm.tool-select:         { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
+      llm.root-cause:          { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
+      llm.routing-suggest:     { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
+      llm.suggestion:          { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
+      llm.follow-up:           { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
+      vector.knowledge-search: { retry: vector-default, timelimiter: vector-default, circuitbreaker: vector-default }
+      tool.query-logs:         { retry: tool-default, timelimiter: tool-default }
+      tool.query-metric:       { retry: tool-default, timelimiter: tool-default }
+      tool.similar-cases:      { retry: tool-default, timelimiter: tool-default }
+
+resilience4j:
+  retry:
+    instances:
+      llm-default:
+        maxAttempts: 3
+        waitDuration: 2s
+        enableExponentialBackoff: true
+        exponentialBackoffMultiplier: 2
+        exponentialMaxWaitDuration: 8s
+        retryExceptions:
+          - com.gcll.ticketagent.resilience.RetryableCallException
+        ignoreExceptions:
+          - com.gcll.ticketagent.resilience.NonRetryableCallException
+      vector-default:
+        maxAttempts: 2
+        waitDuration: 500ms
+        retryExceptions:
+          - com.gcll.ticketagent.resilience.RetryableCallException
+        ignoreExceptions:
+          - com.gcll.ticketagent.resilience.NonRetryableCallException
+      tool-default:
+        maxAttempts: 1
+  timelimiter:
+    instances:
+      llm-default: { timeoutDuration: 60s }
+      vector-default: { timeoutDuration: 5s }
+      tool-default: { timeoutDuration: 10s }
+  circuitbreaker:
+    instances:
+      llm-default:
+        failureRateThreshold: 50
+        slowCallRateThreshold: 80
+        slowCallDurationThreshold: 45s
+        waitDurationInOpenState: 30s
+        slidingWindowSize: 10
+        minimumNumberOfCalls: 5
+      vector-default:
+        failureRateThreshold: 60
+        waitDurationInOpenState: 15s
+        slidingWindowSize: 10
