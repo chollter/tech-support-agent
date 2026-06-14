@@ -18,6 +18,11 @@ spring:
   ai:
     dashscope:
       api-key: ${LLM_API_KEY:}
+      # HTTP 层读响应超时（秒）——治线程泄漏之本。
+      # DashScopeAutoConfiguration 的 restClientCustomizer 消费本字段设置 socket readTimeout，
+      # 保证单次 LLM 调用最坏 60s 释放线程（Resilience4j TimeLimiter 的 cancel 对阻塞 IO 无效，
+      # HTTP 层 timeout 是最终保证）。等于业务层 llm-default TimeLimiter 上限。
+      read-timeout: ${LLM_READ_TIMEOUT_SEC:60}
       chat:
         options:
           model: ${LLM_MODEL:qwen-plus}
