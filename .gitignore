@@ -17,12 +17,16 @@ out/
 .project
 .classpath
 .factorypath
+docs
 
 # IDE - VS Code
 .vscode/
 
 # IDE - Cursor
 .cursor/
+
+# IDE - Claude
+.claude
 
 # OS
 .DS_Store
@@ -33,6 +37,8 @@ Thumbs.db
 .env.local
 application-local.yml
 application-local.properties
+docker-compose.milvus.yml
+docker-compose.yml
 
 # Logs
 logs/
