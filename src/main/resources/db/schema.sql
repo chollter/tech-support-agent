@@ -80,7 +80,8 @@ CREATE TABLE IF NOT EXISTS pending_action (
     reason       TEXT,
     created_at   TIMESTAMP    NOT NULL DEFAULT CURRENT_TIMESTAMP,
     confirmed_at TIMESTAMP,
-    confirmed_by VARCHAR(64)
+    confirmed_by VARCHAR(64),
+    target_team   VARCHAR(64)
 );
 
 CREATE INDEX IF NOT EXISTS idx_pending_action_run ON pending_action (run_id);

@@ -18,6 +18,7 @@ public class PendingActionEntity {
     private LocalDateTime createdAt;
     private LocalDateTime confirmedAt;
     private String confirmedBy;
+    private String targetTeam;
 
     public String getId() {
         return id;
@@ -89,5 +90,13 @@ public class PendingActionEntity {
 
     public void setConfirmedBy(String confirmedBy) {
         this.confirmedBy = confirmedBy;
+    }
+
+    public String getTargetTeam() {
+        return targetTeam;
+    }
+
+    public void setTargetTeam(String targetTeam) {
+        this.targetTeam = targetTeam;
     }
 }

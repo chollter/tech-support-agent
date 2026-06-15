@@ -59,6 +59,7 @@ public class MyBatisPendingActionRepository implements PendingActionRepository {
             entity.setConfirmedAt(LocalDateTime.ofInstant(action.getConfirmedAt(), ZoneId.systemDefault()));
         }
         entity.setConfirmedBy(action.getConfirmedBy());
+        entity.setTargetTeam(action.getTargetTeam());
         return entity;
     }
 
@@ -68,7 +69,8 @@ public class MyBatisPendingActionRepository implements PendingActionRepository {
                 entity.getRunId(),
                 PendingActionType.valueOf(entity.getActionType()),
                 entity.getPayload(),
-                entity.getReason()
+                entity.getReason(),
+                entity.getTargetTeam()
         );
         if (PendingActionStatus.CONFIRMED.name().equals(entity.getStatus())) {
             action.confirm(entity.getConfirmedBy());
