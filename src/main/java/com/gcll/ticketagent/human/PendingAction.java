@@ -9,6 +9,7 @@ public class PendingAction {
     private PendingActionStatus status;
     private final String payload;
     private final String reason;
+    private String targetTeam;
     private final Instant createdAt;
     private Instant confirmedAt;
     private String confirmedBy;
@@ -21,6 +22,12 @@ public class PendingAction {
         this.reason = reason;
         this.status = PendingActionStatus.PENDING;
         this.createdAt = Instant.now();
+    }
+
+    public PendingAction(String id, String runId, PendingActionType actionType,
+                         String payload, String reason, String targetTeam) {
+        this(id, runId, actionType, payload, reason);
+        this.targetTeam = targetTeam;
     }
 
     public String getId() {
@@ -57,6 +64,10 @@ public class PendingAction {
 
     public String getReason() {
         return reason;
+    }
+
+    public String getTargetTeam() {
+        return targetTeam;
     }
 
     public Instant getCreatedAt() {
