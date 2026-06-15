@@ -295,7 +295,7 @@ public class AgentRuntime {
             transactionTemplate.executeWithoutResult(status -> {
                 auditLogService.recordStep(run, AgentStepName.WAIT_HUMAN_CONFIRM, analysis.toString(), confirmReason,
                         false, null, 0, null);
-                humanConfirmService.createDispatchAction(run, analysis.toString(), confirmReason);
+                humanConfirmService.createDispatchAction(run, analysis.toString(), confirmReason, routing.primaryTeam());
                 persistRunContext(run, gap, plan, selection);
                 run.setStatus(AgentRunStatus.WAIT_HUMAN_CONFIRM);
                 agentRunRepository.save(run);

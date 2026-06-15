@@ -38,13 +38,14 @@ public class HumanConfirmService {
         this.notificationService = notificationService;
     }
 
-    public PendingAction createDispatchAction(AgentRun run, String payload, String reason) {
+    public PendingAction createDispatchAction(AgentRun run, String payload, String reason, String targetTeam) {
         PendingAction action = new PendingAction(
                 UUID.randomUUID().toString(),
                 run.getId(),
                 PendingActionType.DISPATCH,
                 payload,
-                reason
+                reason,
+                targetTeam
         );
         return pendingActionRepository.save(action);
     }
