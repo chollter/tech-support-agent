@@ -6,6 +6,9 @@ import com.gcll.ticketagent.api.ErrorCode;
 import com.gcll.ticketagent.audit.AuditLogService;
 import com.gcll.ticketagent.domain.AgentRun;
 import com.gcll.ticketagent.domain.AgentRunStatus;
+import com.gcll.ticketagent.governance.notification.NotificationRequest;
+import com.gcll.ticketagent.governance.notification.NotificationResult;
+import com.gcll.ticketagent.governance.notification.NotificationService;
 import com.gcll.ticketagent.human.PendingAction;
 import com.gcll.ticketagent.human.PendingActionStatus;
 import com.gcll.ticketagent.human.PendingActionType;
@@ -23,13 +26,16 @@ public class HumanConfirmService {
     private final PendingActionRepository pendingActionRepository;
     private final AgentRunRepository agentRunRepository;
     private final AuditLogService auditLogService;
+    private final NotificationService notificationService;
 
     public HumanConfirmService(PendingActionRepository pendingActionRepository,
                                AgentRunRepository agentRunRepository,
-                               AuditLogService auditLogService) {
+                               AuditLogService auditLogService,
+                               NotificationService notificationService) {
         this.pendingActionRepository = pendingActionRepository;
         this.agentRunRepository = agentRunRepository;
         this.auditLogService = auditLogService;
+        this.notificationService = notificationService;
     }
 
     public PendingAction createDispatchAction(AgentRun run, String payload, String reason) {
@@ -62,8 +68,30 @@ public class HumanConfirmService {
         run.setStatus(AgentRunStatus.FINAL);
         agentRunRepository.save(run);
 
-        auditLogService.recordStep(run, AgentStepName.FINAL, action.getPayload(),
-                "confirmed by " + confirmedBy, false, null, 0, null);
+        String auditOutput;
+        String errorMessage = null;
+        if (action.getActionType() == PendingActionType.DISPATCH) {
+            NotificationRequest request = new NotificationRequest(
+                    action.getId(), run.getId(), action.getTargetTeam(), run.getPriority(),
+                    confirmedBy, run.getTraceId(), action.getPayload());
+            NotificationResult result;
+            try {
+                result = notificationService.send(request);
+            } catch (Throwable t) {
+                result = NotificationResult.fail(t.getClass().getSimpleName());
+            }
+            if (result.success()) {
+                auditOutput = "dispatched to " + action.getTargetTeam() + " via " + notificationService.channel()
+                        + ", confirmed by " + confirmedBy;
+            } else {
+                auditOutput = "dispatch confirmed by " + confirmedBy + ", notification failed: " + result.errorType();
+                errorMessage = "notification failed: " + result.errorType();
+            }
+        } else {
+            auditOutput = "confirmed by " + confirmedBy;
+        }
+        auditLogService.recordStep(run, AgentStepName.FINAL, action.getPayload(), auditOutput,
+                false, null, 0, errorMessage);
         return run;
     }
 
