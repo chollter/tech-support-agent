@@ -4,7 +4,12 @@ import com.gcll.ticketagent.api.dto.ReplyType;
 import com.gcll.ticketagent.api.dto.SubmitAgentRunRequest;
 import com.gcll.ticketagent.domain.AgentRun;
 import com.gcll.ticketagent.domain.AgentRunStatus;
+import com.gcll.ticketagent.domain.AgentStep;
+import com.gcll.ticketagent.governance.human.HumanConfirmService;
+import com.gcll.ticketagent.human.PendingAction;
+import com.gcll.ticketagent.human.PendingActionType;
 import com.gcll.ticketagent.persistence.repository.AgentRunRepository;
+import com.gcll.ticketagent.persistence.repository.PendingActionRepository;
 import com.gcll.ticketagent.ticket.TicketApplicationService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,6 +27,12 @@ class IncidentAnalysisFlowTest {
 
     @Autowired
     private AgentRunRepository agentRunRepository;
+
+    @Autowired
+    private HumanConfirmService humanConfirmService;
+
+    @Autowired
+    private PendingActionRepository pendingActionRepository;
 
     @Test
     void incompleteTicketReturnsNeedMoreInfo() {
@@ -88,5 +99,36 @@ class IncidentAnalysisFlowTest {
         );
         assertThat(complete.replyType()).isEqualTo(ReplyType.TICKET_ANALYSIS_RESULT);
         assertThat(complete.analysis()).isNotNull();
+    }
+
+    @Test
+    void confirmedDispatchNotifiesTargetTeam() {
+        var response = ticketApplicationService.submit(new SubmitAgentRunRequest(
+                "sess-disp-1",
+                "u-1001",
+                "",
+                "生产环境，支付系统的 /pay/callback 接口 500，从上午 10 点开始，多个用户支付成功但订单状态还是待支付。",
+                "WEB",
+                null,
+                null
+        ));
+        assertThat(response.status()).isEqualTo(AgentRunStatus.WAIT_HUMAN_CONFIRM);
+
+        PendingAction action = pendingActionRepository.findPending().stream()
+                .filter(a -> a.getRunId().equals(response.runId()))
+                .findFirst()
+                .orElseThrow();
+        assertThat(action.getTargetTeam()).isEqualTo("支付研发组");
+
+        AgentRun run = humanConfirmService.confirm(action.getId(), "tester", PendingActionType.DISPATCH);
+        assertThat(run.getStatus()).isEqualTo(AgentRunStatus.FINAL);
+
+        AgentRun refreshed = agentRunRepository.findById(response.runId()).orElseThrow();
+        String lastFinalOutput = refreshed.getSteps().stream()
+                .filter(s -> "FINAL".equals(s.getStepName()))
+                .reduce((first, second) -> second)
+                .map(AgentStep::getOutputSnapshot)
+                .orElseThrow();
+        assertThat(lastFinalOutput).contains("dispatched to 支付研发组");
     }
 }
