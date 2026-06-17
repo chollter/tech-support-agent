@@ -7,6 +7,7 @@ import java.util.List;
 
 public record EvalCase(
         String id,
+        String scenarioType,
         String title,
         String description,
         ReplyType expectedReplyType,
@@ -20,10 +21,12 @@ public record EvalCase(
         boolean expectRootCauseEvidence,
         boolean expectGapAnalysis,
         boolean expectSemanticFollowUp,
+        boolean expectKnowledgeDegraded,
         List<String> questionKeywords,
         List<String> expectPlanActions,
         List<String> expectSkipPlanActions,
         List<String> expectSelectedTools,
+        List<String> expectFailedTools,
         String expectedIssueType
 ) {
 }

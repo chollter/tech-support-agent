@@ -1,5 +1,6 @@
 package com.gcll.ticketagent.execution.evidence;
 
+import com.gcll.ticketagent.eval.EvalFaultInjection;
 import com.gcll.ticketagent.execution.tool.ToolSelection;
 import com.gcll.ticketagent.extract.TicketExtractResult;
 import com.gcll.ticketagent.persistence.repository.ToolExecutionLogRepository;
@@ -45,6 +46,7 @@ public class EvidenceCollectionService {
             log.info("No tools selected for evidence collection, runId={}", runId);
             return results;
         }
+        String sanitizedContent = EvalFaultInjection.sanitize(originalContent);
 
         for (String toolName : selection.selectedToolNames()) {
             ToolGateway tool = toolRegistry.find(toolName).orElse(null);
@@ -52,11 +54,24 @@ public class EvidenceCollectionService {
                 log.warn("Selected tool not registered, runId={}, toolName={}", runId, toolName);
                 continue;
             }
+            if (EvalFaultInjection.shouldFail(originalContent, tool.toolName())) {
+                ToolResult injectedFailure = ToolResult.failure(
+                        tool.toolType(),
+                        tool.toolName(),
+                        sanitizedContent,
+                        "injected failure for eval",
+                        0
+                );
+                results.add(injectedFailure);
+                toolExecutionLogRepository.save(runId, "EVIDENCE_COLLECTION", injectedFailure);
+                log.warn("Tool [{}] failed by eval injection", tool.toolName());
+                continue;
+            }
             // 工具调用经 ExternalCallGateway 治理（tool-default：默认不重试，因工具有副作用）。
             // 超时/熔断/异常统一由 Gateway 处理；成功用 tool 自带的 ToolResult，失败降级为 failure。
             CallResult<ToolResult> callResult = externalCallGateway.execute(
                     mapCallName(tool.toolName()),
-                    () -> tool.execute(extract, originalContent)
+                    () -> tool.execute(extract, sanitizedContent)
             );
             ToolResult result;
             if (callResult.success()) {
@@ -65,7 +80,7 @@ public class EvidenceCollectionService {
                 String reason = callResult.circuitOpen() ? "circuit open"
                         : (callResult.error() != null ? callResult.error().getMessage() : "unknown");
                 result = ToolResult.failure(
-                        tool.toolType(), tool.toolName(), originalContent, reason, callResult.durationMs());
+                        tool.toolType(), tool.toolName(), sanitizedContent, reason, callResult.durationMs());
             }
             results.add(result);
             toolExecutionLogRepository.save(runId, "EVIDENCE_COLLECTION", result);

@@ -103,8 +103,33 @@ body {
   grid-column: 1 / -1;
 }
 
+.knowledge-panel {
+  grid-column: 1 / -1;
+}
+
+.field-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
 .eval-result {
   font-size: 0.85rem;
+}
+
+.eval-groups {
+  display: grid;
+  gap: 0.4rem;
+  margin: 0.75rem 0;
+}
+
+.eval-group-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0.45rem 0.6rem;
+  background: var(--surface-2);
+  border-radius: 6px;
 }
 
 .eval-pass {
@@ -391,21 +416,24 @@ body {
 }
 
 .step-list,
-.pending-list {
+.pending-list,
+.knowledge-list {
   list-style: none;
   max-height: 320px;
   overflow-y: auto;
 }
 
 .step-item,
-.pending-item {
+.pending-item,
+.knowledge-item {
   padding: 0.65rem 0.75rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.85rem;
 }
 
 .step-item:last-child,
-.pending-item:last-child {
+.pending-item:last-child,
+.knowledge-item:last-child {
   border-bottom: none;
 }
 
@@ -445,8 +473,31 @@ body {
   margin-left: auto;
 }
 
+.knowledge-form {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.knowledge-source {
+  margin-left: 0.5rem;
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+  background: rgba(6, 182, 212, 0.16);
+  color: var(--info);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.knowledge-summary {
+  margin-top: 0.35rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
+
 .step-empty,
-.pending-empty {
+.pending-empty,
+.knowledge-empty {
   color: var(--text-muted);
   font-size: 0.85rem;
   padding: 1rem;
@@ -489,5 +540,14 @@ body {
 
   .human-panel {
     grid-column: 1;
+  }
+
+  .knowledge-panel {
+    grid-column: 1;
+  }
+
+  .field-grid {
+    grid-template-columns: 1fr;
+    gap: 0;
   }
 }

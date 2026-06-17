@@ -13,6 +13,8 @@
   const refreshAuditBtn = $('refreshAuditBtn');
   const refreshPendingBtn = $('refreshPendingBtn');
   const runEvalBtn = $('runEvalBtn');
+  const knowledgeForm = $('knowledgeForm');
+  const refreshKnowledgeBtn = $('refreshKnowledgeBtn');
   const sampleIncomplete = $('sampleIncomplete');
   const sampleComplete = $('sampleComplete');
 
@@ -37,6 +39,10 @@
   function setLoading(loading) {
     $('submitBtn').disabled = loading;
     supplementBtn.disabled = loading;
+  }
+
+  function setKnowledgeLoading(loading) {
+    $('knowledgeUploadBtn').disabled = loading;
   }
 
   function closeSSE() {
@@ -337,6 +343,20 @@
       const report = await apiFetch(`${API}/evals/run`, { method: 'POST' });
       const passClass = report.failed === 0 ? 'eval-pass' : 'eval-fail';
       let html = '<p class="' + passClass + '">通过 ' + report.passed + ' / ' + report.total + '</p>';
+      if (report.suiteName) {
+        html += '<p class="hint">数据集：' + esc(report.suiteName) + '</p>';
+      }
+      if (report.groups && report.groups.length) {
+        html += '<div class="eval-groups">';
+        report.groups.forEach((group) => {
+          const groupClass = group.failed === 0 ? 'eval-pass' : 'eval-fail';
+          html += '<div class="eval-group-item">' +
+            '<span>' + esc(group.name) + '</span>' +
+            '<span class="' + groupClass + '">' + group.passed + ' / ' + group.total + '</span>' +
+            '</div>';
+        });
+        html += '</div>';
+      }
       if (report.failures && report.failures.length) {
         html += '<ul>';
         report.failures.forEach((f) => { html += '<li class="eval-fail">' + esc(f) + '</li>'; });
@@ -349,6 +369,64 @@
       showToast(err.message, true);
     } finally {
       runEvalBtn.disabled = false;
+    }
+  }
+
+  async function uploadKnowledge(e) {
+    e.preventDefault();
+    const file = $('knowledgeFile').files[0];
+    if (!file) {
+      showToast('请选择知识文档', true);
+      return;
+    }
+    setKnowledgeLoading(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      appendFormValue(formData, 'title', $('knowledgeTitle').value);
+      appendFormValue(formData, 'systemName', $('knowledgeSystem').value);
+      appendFormValue(formData, 'moduleName', $('knowledgeModule').value);
+      appendFormValue(formData, 'tags', $('knowledgeTags').value);
+
+      const result = await apiFetch(`${API}/knowledge/documents`, {
+        method: 'POST',
+        body: formData
+      });
+      knowledgeForm.reset();
+      await loadKnowledge();
+      showToast('已导入 ' + result.chunks + ' 个知识片段' + (result.vectorIndexed ? '，并写入向量索引' : ''));
+    } catch (err) {
+      showToast(err.message, true);
+    } finally {
+      setKnowledgeLoading(false);
+    }
+  }
+
+  function appendFormValue(formData, key, value) {
+    const trimmed = value == null ? '' : value.trim();
+    if (trimmed) {
+      formData.append(key, trimmed);
+    }
+  }
+
+  async function loadKnowledge() {
+    const list = $('knowledgeList');
+    try {
+      const docs = await apiFetch(`${API}/knowledge/documents?limit=8`);
+      if (!docs || docs.length === 0) {
+        list.innerHTML = '<li class="knowledge-empty">暂无导入记录</li>';
+        return;
+      }
+      list.innerHTML = docs.map((doc) => {
+        const meta = [doc.systemName, doc.moduleName, doc.tags].filter(Boolean).join(' / ');
+        return '<li class="knowledge-item">' +
+          '<div><strong>' + esc(doc.title) + '</strong><span class="knowledge-source">' + esc(doc.sourceType || '') + '</span></div>' +
+          (meta ? '<div class="step-meta">' + esc(meta) + '</div>' : '') +
+          '<div class="knowledge-summary">' + esc(doc.summary || '') + '</div>' +
+          '</li>';
+      }).join('');
+    } catch (err) {
+      list.innerHTML = '<li class="knowledge-empty">加载失败</li>';
     }
   }
 
@@ -419,10 +497,13 @@
   });
 
   submitForm.addEventListener('submit', submitTicket);
+  knowledgeForm.addEventListener('submit', uploadKnowledge);
   supplementBtn.addEventListener('click', supplementMessage);
   refreshAuditBtn.addEventListener('click', () => loadAudit(currentRunId, null));
   refreshPendingBtn.addEventListener('click', loadPending);
+  refreshKnowledgeBtn.addEventListener('click', loadKnowledge);
   runEvalBtn.addEventListener('click', runEval);
 
   loadPending();
+  loadKnowledge();
 })();

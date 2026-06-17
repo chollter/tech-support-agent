@@ -12,6 +12,7 @@ import com.gcll.ticketagent.api.dto.TicketAnalysisDto;
 import com.gcll.ticketagent.api.dto.TicketSummaryDto;
 import com.gcll.ticketagent.analysis.RootCauseAnalysisService;
 import com.gcll.ticketagent.analysis.RootCauseResult;
+import com.gcll.ticketagent.eval.EvalFaultInjection;
 import com.gcll.ticketagent.audit.AuditLogService;
 import com.gcll.ticketagent.understanding.completeness.CompletenessDecision;
 import com.gcll.ticketagent.understanding.completeness.CompletenessDecisionService;
@@ -318,10 +319,17 @@ public class AgentRuntime {
      * 替代了原先的 {@code CompletableFuture + future.get(timeout)} 模式（后者对阻塞 IO 的 cancel 无效）。
      */
     private KnowledgeSearchOutcome searchKnowledgeSafely(AgentRun run, TicketDraft draft, TicketExtractResult extract) {
+        if (EvalFaultInjection.shouldFailKnowledgeSearch(draft.fullContent())) {
+            return new KnowledgeSearchOutcome(
+                    Collections.emptyList(),
+                    "degraded: injected knowledge search failure",
+                    "Knowledge search failed: injected failure for eval"
+            );
+        }
         CallResult<List<KnowledgeHit>> result = externalCallGateway.execute(
                 "vector.knowledge-search",
                 () -> knowledgeSearchService.search(
-                        draft.fullContent(),
+                        EvalFaultInjection.sanitize(draft.fullContent()),
                         extract.affectedSystem(),
                         extract.affectedModule(),
                         extract.issueType().name()

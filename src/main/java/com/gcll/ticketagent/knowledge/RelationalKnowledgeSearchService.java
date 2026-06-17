@@ -6,8 +6,10 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Set;
 
 @Service
 public class RelationalKnowledgeSearchService implements KnowledgeSearchService {
@@ -23,6 +25,7 @@ public class RelationalKnowledgeSearchService implements KnowledgeSearchService 
         List<KnowledgeDocumentEntity> documents = knowledgeDocumentRepository.findAll();
         List<KnowledgeHit> hits = new ArrayList<>();
         String lowerQuery = query == null ? "" : query.toLowerCase(Locale.ROOT);
+        Set<String> queryTokens = tokenize(lowerQuery);
 
         for (KnowledgeDocumentEntity doc : documents) {
             if (systemName != null && doc.getSystemName() != null
@@ -33,7 +36,7 @@ public class RelationalKnowledgeSearchService implements KnowledgeSearchService 
                     && !doc.getModuleName().contains(moduleName) && !moduleName.contains(doc.getModuleName())) {
                 continue;
             }
-            double score = scoreDocument(doc, lowerQuery);
+            double score = scoreDocument(doc, lowerQuery, queryTokens, systemName, moduleName, issueType);
             if (score > 0) {
                 hits.add(new KnowledgeHit(
                         doc.getSourceId(),
@@ -50,10 +53,42 @@ public class RelationalKnowledgeSearchService implements KnowledgeSearchService 
         return hits.stream().limit(5).toList();
     }
 
-    private double scoreDocument(KnowledgeDocumentEntity doc, String lowerQuery) {
+    private double scoreDocument(
+            KnowledgeDocumentEntity doc,
+            String lowerQuery,
+            Set<String> queryTokens,
+            String systemName,
+            String moduleName,
+            String issueType
+    ) {
         double score = 0;
-        String content = doc.getContent().toLowerCase(Locale.ROOT);
-        String title = doc.getTitle().toLowerCase(Locale.ROOT);
+        String content = lower(doc.getContent());
+        String title = lower(doc.getTitle());
+        String tags = lower(doc.getTags());
+        String combined = title + " " + content + " " + tags;
+
+        if (systemName != null && doc.getSystemName() != null && systemName.contains(doc.getSystemName())) {
+            score += 0.35;
+        }
+        if (moduleName != null && doc.getModuleName() != null && moduleName.contains(doc.getModuleName())) {
+            score += 0.25;
+        }
+        if (issueType != null && combined.contains(issueType.toLowerCase(Locale.ROOT))) {
+            score += 0.15;
+        }
+
+        for (String token : queryTokens) {
+            if (title.contains(token)) {
+                score += 0.25;
+            }
+            if (content.contains(token)) {
+                score += 0.12;
+            }
+            if (tags.contains(token)) {
+                score += 0.18;
+            }
+        }
+
         if (lowerQuery.contains("支付") && (content.contains("支付") || title.contains("支付"))) {
             score += 0.4;
         }
@@ -70,6 +105,31 @@ public class RelationalKnowledgeSearchService implements KnowledgeSearchService 
             score = 0.5;
         }
         return score;
+    }
+
+    private Set<String> tokenize(String text) {
+        Set<String> tokens = new LinkedHashSet<>();
+        String normalized = text.replaceAll("[^0-9a-zA-Z\\u4e00-\\u9fa5/_-]+", " ");
+        for (String part : normalized.split("\\s+")) {
+            if (part.length() >= 2) {
+                tokens.add(part);
+            }
+        }
+        String[] domainTerms = {
+                "支付", "回调", "订单", "待支付", "结算", "批处理", "权限", "账号",
+                "缓存", "redis", "mq", "消息", "积压", "oom", "oomkilled", "timeout",
+                "超时", "慢", "失败", "报错", "500", "hikari", "连接池"
+        };
+        for (String term : domainTerms) {
+            if (text.contains(term.toLowerCase(Locale.ROOT))) {
+                tokens.add(term.toLowerCase(Locale.ROOT));
+            }
+        }
+        return tokens;
+    }
+
+    private String lower(String text) {
+        return text == null ? "" : text.toLowerCase(Locale.ROOT);
     }
 
     private String truncate(String text, int max) {

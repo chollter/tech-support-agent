@@ -90,8 +90,43 @@
         <button type="button" class="btn btn-primary btn-sm" id="runEvalBtn">运行 Eval</button>
       </div>
       <div id="evalResult" class="eval-result">
-        <p class="hint">点击运行，验证「信息不足」与「支付故障 P1」两条核心场景。</p>
+        <p class="hint">点击运行，验证独立数据集中的回归与扰动场景。</p>
       </div>
+    </section>
+
+    <section class="panel knowledge-panel">
+      <div class="panel-header-row">
+        <h2>知识库导入</h2>
+        <button type="button" class="btn btn-ghost btn-sm" id="refreshKnowledgeBtn">刷新</button>
+      </div>
+      <form id="knowledgeForm" class="knowledge-form">
+        <div class="field-row">
+          <label for="knowledgeFile">文档（Markdown / TXT）</label>
+          <input id="knowledgeFile" name="file" type="file" accept=".md,.txt,text/markdown,text/plain" required>
+        </div>
+        <div class="field-row">
+          <label for="knowledgeTitle">标题（可选）</label>
+          <input id="knowledgeTitle" name="title" placeholder="例如：库存出库事件积压 Runbook">
+        </div>
+        <div class="field-grid">
+          <div class="field-row">
+            <label for="knowledgeSystem">系统</label>
+            <input id="knowledgeSystem" name="systemName" placeholder="例如：库存系统">
+          </div>
+          <div class="field-row">
+            <label for="knowledgeModule">模块</label>
+            <input id="knowledgeModule" name="moduleName" placeholder="例如：出库事件">
+          </div>
+        </div>
+        <div class="field-row">
+          <label for="knowledgeTags">标签</label>
+          <input id="knowledgeTags" name="tags" placeholder="例如：库存,出库,MQ,outbox">
+        </div>
+        <button type="submit" class="btn btn-primary" id="knowledgeUploadBtn">导入知识</button>
+      </form>
+      <ul id="knowledgeList" class="knowledge-list">
+        <li class="knowledge-empty">暂无导入记录</li>
+      </ul>
     </section>
 
     <section class="panel human-panel">

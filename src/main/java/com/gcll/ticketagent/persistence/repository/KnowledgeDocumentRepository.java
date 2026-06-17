@@ -6,4 +6,8 @@ import java.util.List;
 
 public interface KnowledgeDocumentRepository {
     List<KnowledgeDocumentEntity> findAll();
+
+    KnowledgeDocumentEntity save(KnowledgeDocumentEntity document);
+
+    List<KnowledgeDocumentEntity> findRecent(int limit);
 }
