@@ -1,5 +1,7 @@
 package com.gcll.ticketagent.knowledge;
 
+import com.gcll.ticketagent.knowledge.rerank.RerankEntry;
+import com.gcll.ticketagent.knowledge.rerank.RerankService;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
@@ -16,12 +18,17 @@ import java.util.Map;
 @ConditionalOnBean(VectorStore.class)
 public class VectorKnowledgeSearchService implements KnowledgeSearchService {
 
-    private static final int TOP_K = 5;
+    /** 向量召回数（粗排）：多召回给 rerank 更多候选；无 rerank 时在最后截断到 FINAL_TOP_K。 */
+    private static final int RECALL_TOP_K = 20;
+    /** 最终返回条数（rerank 后或无 rerank 时）。 */
+    private static final int FINAL_TOP_K = 5;
 
     private final VectorStore vectorStore;
+    private final RerankService rerankService;
 
-    public VectorKnowledgeSearchService(VectorStore vectorStore) {
+    public VectorKnowledgeSearchService(VectorStore vectorStore, RerankService rerankService) {
         this.vectorStore = vectorStore;
+        this.rerankService = rerankService;
     }
 
     @Override
@@ -29,18 +36,33 @@ public class VectorKnowledgeSearchService implements KnowledgeSearchService {
         String searchQuery = buildSearchQuery(query, systemName, moduleName);
         SearchRequest request = SearchRequest.builder()
                 .query(searchQuery)
-                .topK(TOP_K)
+                .topK(RECALL_TOP_K)
                 .similarityThreshold(0.5)
                 .build();
 
         List<Document> documents = vectorStore.similaritySearch(request);
-        List<KnowledgeHit> hits = new ArrayList<>();
+        // Java 层 system/module 过滤（向量库未下推表达式过滤）
+        List<Document> filtered = new ArrayList<>();
         for (Document doc : documents) {
-            Map<String, Object> meta = doc.getMetadata();
-            if (!matchesFilter(meta, systemName, moduleName)) {
-                continue;
+            if (matchesFilter(doc.getMetadata(), systemName, moduleName)) {
+                filtered.add(doc);
             }
-            hits.add(toHit(doc, meta));
+        }
+        if (filtered.isEmpty()) {
+            return List.of();
+        }
+
+        // rerank：候选数 > FINAL_TOP_K 才值得调；rerank 失败/关闭由 RerankService 内部降级
+        List<RerankEntry> entries = new ArrayList<>(filtered.size());
+        for (int i = 0; i < filtered.size(); i++) {
+            entries.add(new RerankEntry(i, filtered.get(i).getText()));
+        }
+        List<RerankEntry> ordered = rerankService.rerank(query, entries, FINAL_TOP_K);
+
+        boolean reranked = rerankService.active() && entries.size() > FINAL_TOP_K;
+        List<KnowledgeHit> hits = new ArrayList<>(ordered.size());
+        for (RerankEntry entry : ordered) {
+            hits.add(toHit(filtered.get(entry.index()), filtered.get(entry.index()).getMetadata(), reranked));
         }
         return hits;
     }
@@ -81,13 +103,14 @@ public class VectorKnowledgeSearchService implements KnowledgeSearchService {
         return true;
     }
 
-    private KnowledgeHit toHit(Document doc, Map<String, Object> meta) {
+    private KnowledgeHit toHit(Document doc, Map<String, Object> meta, boolean reranked) {
         String content = doc.getText() == null ? "" : doc.getText();
         String title = stringMeta(meta, "title");
         if (title.isBlank()) {
             title = content.length() > 40 ? content.substring(0, 40) + "..." : content;
         }
         double score = doc.getScore() != null ? doc.getScore() : 0.75;
+        String reason = reranked ? "向量语义检索 + rerank 重排序" : "向量语义检索";
         return new KnowledgeHit(
                 stringMeta(meta, "sourceId"),
                 stringMeta(meta, "sourceType"),
@@ -95,7 +118,8 @@ public class VectorKnowledgeSearchService implements KnowledgeSearchService {
                 truncate(content, 120),
                 content,
                 score,
-                "向量语义检索"
+                reason,
+                reranked
         );
     }
 
