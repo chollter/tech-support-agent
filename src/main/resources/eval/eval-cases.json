@@ -1,6 +1,6 @@
 [
   {
-    "id": "inc_001",
+    "id": "insufficient-info",
     "scenarioType": "core-regression",
     "title": "信息不足",
     "description": "接口报错了",
@@ -24,7 +24,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_002",
+    "id": "payment-callback-500",
     "scenarioType": "core-regression",
     "title": "支付故障",
     "description": "生产环境，支付系统的 /pay/callback 接口 500，从上午 10 点开始，多个用户支付成功但订单状态还是待支付。",
@@ -48,7 +48,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_003",
+    "id": "oom-killed",
     "scenarioType": "core-regression",
     "title": "OOMKilled",
     "description": "生产环境支付系统 payment-service 支付下单接口从上午10点开始失败，多个用户支付失败，Pod OOMKilled，错误信息 Java heap space，内存使用从 200Mi 飙升到 512Mi 后被 kill。",
@@ -72,7 +72,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_004",
+    "id": "db-connection-timeout",
     "scenarioType": "core-regression",
     "title": "DB Connection Timeout",
     "description": "生产环境订单系统 order-service 订单查询接口从上午10点开始失败，多个用户订单查询超时，HikariPool 数据库连接池耗尽，错误信息 connection timeout。",
@@ -96,7 +96,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_005",
+    "id": "mfa-permission",
     "scenarioType": "core-regression",
     "title": "MFA 权限",
     "description": "生产环境账号系统 MFA 重置接口从上午10点开始审批失败，单个用户 u-8831 无法登录后台，错误信息 wait admin approval。",
@@ -120,7 +120,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_006",
+    "id": "data-consistency",
     "scenarioType": "core-regression",
     "title": "数据一致性",
     "description": "生产环境结算系统批处理重复执行，出现资金账务数据不一致，影响多个商户。",
@@ -144,7 +144,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_007",
+    "id": "test-env-low-priority",
     "scenarioType": "core-regression",
     "title": "测试环境低优先级",
     "description": "测试环境账号系统权限同步接口从上午10点开始失败，单个用户测试账号受影响，可以手工绕过，错误信息 permission sync failed。",
@@ -168,7 +168,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_008",
+    "id": "knowledge-no-hit",
     "scenarioType": "core-regression",
     "title": "知识库无命中",
     "description": "生产环境新上线的报表导出任务偶发格式错乱，暂无错误码，单个运营用户反馈。",
@@ -192,7 +192,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_009",
+    "id": "mq-backlog",
     "scenarioType": "core-regression",
     "title": "MQ 积压",
     "description": "生产环境支付系统支付成功事件 MQ 消费接口从上午10点开始积压，多个用户支付完成后看不到订单变化，错误信息 consumer lag high。",
@@ -216,7 +216,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_010",
+    "id": "cache-timeout",
     "scenarioType": "core-regression",
     "title": "缓存超时",
     "description": "生产环境支付系统支付风控接口从上午10点开始响应变慢，部分用户下单失败，Redis 缓存访问 timeout，错误信息 cache timeout。",
@@ -240,7 +240,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_011",
+    "id": "batch-semantic-followup",
     "scenarioType": "core-regression",
     "title": "批处理语义追问",
     "description": "结算批处理有时跑不完",
@@ -264,7 +264,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_012",
+    "id": "intermittent-slow-followup",
     "scenarioType": "core-regression",
     "title": "偶发慢语义追问",
     "description": "生产支付接口偶尔慢",
@@ -288,7 +288,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_013",
+    "id": "oom-plan-metric-first",
     "scenarioType": "core-regression",
     "title": "OOM plan 优先 metric",
     "description": "生产环境支付系统 payment-service 支付下单接口从上午10点开始失败，多个用户支付失败，Pod OOMKilled，错误信息 Java heap space，内存使用从 200Mi 飙升到 512Mi 后被 kill。",
@@ -312,7 +312,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_014",
+    "id": "mfa-consult",
     "scenarioType": "core-regression",
     "title": "MFA 咨询",
     "description": "如何配置 MFA",
@@ -336,7 +336,7 @@
     "expectedIssueType": "CONSULT"
   },
   {
-    "id": "inc_015",
+    "id": "colloquial-payment-status",
     "scenarioType": "robustness",
     "title": "口语化支付状态异常",
     "description": "线上有用户反馈钱扣了，但单子还挂着待支付，像是支付回调那边没把状态刷回来，影响了好几个用户。",
@@ -360,7 +360,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_016",
+    "id": "noisy-inventory-backlog",
     "scenarioType": "robustness",
     "title": "噪声化库存事件积压",
     "description": "prod 库存这边像卡住了，订单明明付完了出库还没起，怀疑 outbound 事件消费堵住了，得看看 lag / dead letter。",
@@ -384,7 +384,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_017",
+    "id": "typo-payment-fault",
     "scenarioType": "robustness",
     "title": "错别字支付故障",
     "description": "生厂环境支fu回调报搓，多个yong户付款成了但订单还是待支付，麻烦看下。",
@@ -408,7 +408,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_018",
+    "id": "disordered-slow-query",
     "scenarioType": "robustness",
     "title": "顺序混乱的慢查询描述",
     "description": "多个用户查订单不出来，10点开始，线上，HikariPool 满了，order-service，先怀疑库连不上，订单查询接口。",
@@ -432,7 +432,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_019",
+    "id": "consult-non-incident",
     "scenarioType": "robustness",
     "title": "咨询型非故障输入",
     "description": "想问下支付回调接口的超时时间现在默认是多少，准备排查配置。",
@@ -456,7 +456,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_020",
+    "id": "requirement-not-incident",
     "scenarioType": "robustness",
     "title": "需求输入避免误判故障",
     "description": "需要给支付回调接口增加重试开关和报警阈值配置。",
@@ -480,7 +480,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_021",
+    "id": "log-tool-failure-continue",
     "scenarioType": "robustness",
     "title": "日志工具失败后继续分析",
     "description": "[inject-failure:query_logs] 生产环境支付系统 payment-service 支付下单接口从上午10点开始失败，多个用户支付失败，Pod OOMKilled，错误信息 Java heap space，内存使用从 200Mi 飙升到 512Mi 后被 kill。",
@@ -504,7 +504,7 @@
     "expectedIssueType": null
   },
   {
-    "id": "inc_022",
+    "id": "knowledge-degraded-continue",
     "scenarioType": "robustness",
     "title": "知识检索降级后继续分析",
     "description": "[inject-failure:knowledge-search] 生产环境支付系统 payment-service 支付下单接口从上午10点开始失败，多个用户支付失败，Pod OOMKilled，错误信息 Java heap space，内存使用从 200Mi 飙升到 512Mi 后被 kill。",
