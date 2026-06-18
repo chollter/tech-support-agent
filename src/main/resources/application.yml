@@ -28,6 +28,21 @@ spring:
       chat:
         options:
           model: ${LLM_MODEL:qwen-plus}
+    mcp:
+      client:
+        # 默认关闭：测试/无 PG 环境下不拉起 server 子进程；生产/演示时设 MCP_ENABLED=true
+        enabled: ${MCP_ENABLED:false}
+        name: tech-support-mcp-client
+        version: 1.0.0
+        type: SYNC
+        stdio:
+          connections:
+            ops-mcp-server:
+              # stdio 子进程：应用拉起 ops-mcp-server jar，经 stdin/stdout 通信
+              command: ${MCP_SERVER_JAVA:java}
+              args:
+                - "-jar"
+                - ${MCP_SERVER_JAR:../ops-mcp-server/target/ops-mcp-server-1.0.0-SNAPSHOT.jar}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -77,19 +92,12 @@ opsmind:
   input:
     max-content-length: ${OPSMIND_MAX_CONTENT_LENGTH:8000}
   resilience:
+    # 通配 key（* 结尾）作为前缀规则：未显式列出的 callName 按前缀自动继承策略，
+    # 新增调用点零配置即纳入治理，防遗漏裸奔。精确 key 优先于前缀规则（见 CallRegistry.get）。
     call-mappings:
-      llm.ticket-extract:      { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
-      llm.info-gap:            { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
-      llm.agent-plan:          { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
-      llm.tool-select:         { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
-      llm.root-cause:          { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
-      llm.routing-suggest:     { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
-      llm.suggestion:          { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
-      llm.follow-up:           { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
-      vector.knowledge-search: { retry: vector-default, timelimiter: vector-default, circuitbreaker: vector-default }
-      tool.query-logs:         { retry: tool-default, timelimiter: tool-default }
-      tool.query-metric:       { retry: tool-default, timelimiter: tool-default }
-      tool.similar-cases:      { retry: tool-default, timelimiter: tool-default }
+      llm.*:      { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
+      vector.*:   { retry: vector-default, timelimiter: vector-default, circuitbreaker: vector-default }
+      tool.*:     { retry: tool-default, timelimiter: tool-default }
 
 resilience4j:
   retry:
