@@ -1,0 +1,30 @@
+spring:
+  application:
+    name: ops-mcp-server
+  main:
+    # STDIO MCP server 不需要 web，禁用省资源
+    web-application-type: none
+  datasource:
+    # 连同一个 PostgreSQL（与主应用共享样例数据）
+    url: jdbc:postgresql://${PG_HOST:localhost}:${PG_PORT:5432}/${PG_DATABASE:tech_support_agent}
+    username: ${PG_USER:postgres}
+    password: ${PG_PASSWORD:postgres}
+    driver-class-name: org.postgresql.Driver
+  ai:
+    mcp:
+      server:
+        name: ops-mcp-server
+        version: 1.0.0
+        type: SYNC
+
+mybatis-plus:
+  configuration:
+    map-underscore-to-camel-case: true
+  global-config:
+    db-config:
+      id-type: assign_uuid
+
+logging:
+  # STDIO 传输下，日志必须走 stderr，不能污染 stdout（stdout 是 MCP 通信通道）
+  pattern:
+    console: "%d{HH:mm:ss.SSS} %-5level %logger{36} - %msg%n"
