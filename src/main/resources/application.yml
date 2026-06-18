@@ -74,10 +74,6 @@ management:
       exposure:
         include: health,info,metrics,prometheus
 
-llm:
-  connect-timeout-ms: 10000
-  read-timeout-ms: 60000
-  max-retries: 2
 
 knowledge:
   search:
@@ -91,6 +87,17 @@ opsmind:
     stuck-running-timeout-minutes: ${OPSMIND_STUCK_RUNNING_TIMEOUT_MINUTES:15}
   input:
     max-content-length: ${OPSMIND_MAX_CONTENT_LENGTH:8000}
+  rag:
+    rerank:
+      # 默认关闭：无 LLM_API_KEY 或不需要精排时走 NoopRerankService（保持向量召回顺序）
+      enabled: ${RERANK_ENABLED:false}
+      model: ${RERANK_MODEL:gte-rerank-v2}
+      endpoint: ${RERANK_ENDPOINT:https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/}
+  eval:
+    judge:
+      # LLM-as-judge 质量评测：默认关闭，开启后 EvalRunner 对根因输出打 1-5 分。
+      # 关闭时 EvalReport.qualitySummary.skipped=true，不影响现有流程断言。
+      enabled: ${EVAL_JUDGE_ENABLED:false}
   resilience:
     # 通配 key（* 结尾）作为前缀规则：未显式列出的 callName 按前缀自动继承策略，
     # 新增调用点零配置即纳入治理，防遗漏裸奔。精确 key 优先于前缀规则（见 CallRegistry.get）。
@@ -98,6 +105,7 @@ opsmind:
       llm.*:      { retry: llm-default, timelimiter: llm-default, circuitbreaker: llm-default }
       vector.*:   { retry: vector-default, timelimiter: vector-default, circuitbreaker: vector-default }
       tool.*:     { retry: tool-default, timelimiter: tool-default }
+      rerank.*:   { retry: rerank-default, timelimiter: rerank-default, circuitbreaker: rerank-default }
 
 resilience4j:
   retry:
@@ -119,12 +127,20 @@ resilience4j:
           - com.gcll.ticketagent.resilience.RetryableCallException
         ignoreExceptions:
           - com.gcll.ticketagent.resilience.NonRetryableCallException
+      rerank-default:
+        maxAttempts: 2
+        waitDuration: 500ms
+        retryExceptions:
+          - com.gcll.ticketagent.resilience.RetryableCallException
+        ignoreExceptions:
+          - com.gcll.ticketagent.resilience.NonRetryableCallException
       tool-default:
         maxAttempts: 1
   timelimiter:
     instances:
       llm-default: { timeoutDuration: 60s }
       vector-default: { timeoutDuration: 5s }
+      rerank-default: { timeoutDuration: 5s }
       tool-default: { timeoutDuration: 10s }
   circuitbreaker:
     instances:
@@ -136,6 +152,11 @@ resilience4j:
         slidingWindowSize: 10
         minimumNumberOfCalls: 5
       vector-default:
+        failureRateThreshold: 60
+        waitDurationInOpenState: 15s
+        slidingWindowSize: 10
+      rerank-default:
+        # rerank 失败可降级回原始向量排序，熔断打开时直接降级
         failureRateThreshold: 60
         waitDurationInOpenState: 15s
         slidingWindowSize: 10

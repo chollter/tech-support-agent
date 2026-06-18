@@ -8,6 +8,7 @@ public record EvalReport(
         int passed,
         int failed,
         java.util.List<EvalGroupReport> groups,
-        List<String> failures
+        List<String> failures,
+        EvalQualitySummary qualitySummary
 ) {
 }

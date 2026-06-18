@@ -6,6 +6,7 @@ import com.gcll.ticketagent.api.dto.ReplyType;
 import com.gcll.ticketagent.api.dto.SubmitAgentRunRequest;
 import com.gcll.ticketagent.domain.AgentRunStatus;
 import com.gcll.ticketagent.domain.AgentStep;
+import com.gcll.ticketagent.eval.judge.EvalJudgeService;
 import com.gcll.ticketagent.persistence.repository.AgentRunRepository;
 import com.gcll.ticketagent.persistence.repository.ToolExecutionLogRepository;
 import com.gcll.ticketagent.ticket.TicketApplicationService;
@@ -33,17 +34,20 @@ public class EvalRunner {
     private final AgentRunRepository agentRunRepository;
     private final ToolExecutionLogRepository toolExecutionLogRepository;
     private final ObjectMapper objectMapper;
+    private final EvalJudgeService evalJudgeService;
 
     public EvalRunner(
             TicketApplicationService ticketApplicationService,
             AgentRunRepository agentRunRepository,
             ToolExecutionLogRepository toolExecutionLogRepository,
-            ObjectMapper objectMapper
+            ObjectMapper objectMapper,
+            EvalJudgeService evalJudgeService
     ) {
         this.ticketApplicationService = ticketApplicationService;
         this.agentRunRepository = agentRunRepository;
         this.toolExecutionLogRepository = toolExecutionLogRepository;
         this.objectMapper = objectMapper;
+        this.evalJudgeService = evalJudgeService;
     }
 
     public EvalReport run() {
@@ -52,6 +56,10 @@ public class EvalRunner {
         int passed = 0;
         List<String> failures = new ArrayList<>();
         Map<String, GroupCounter> groups = new LinkedHashMap<>();
+        // judge 探活：不可用则完全跳过质量评测（不影响现有流程断言）
+        boolean judgeActive = evalJudgeService.available();
+        // 收集有根因输出的 case（用于 judge 评分）：caseId + 根因文本
+        Map<String, String> rootCauseTexts = judgeActive ? new LinkedHashMap<>() : null;
 
         for (EvalCase evalCase : cases) {
             GroupCounter counter = groups.computeIfAbsent(groupName(evalCase), ignored -> new GroupCounter());
@@ -65,6 +73,14 @@ public class EvalRunner {
                     null,
                     null
             ));
+            // judge 可用时，收集根因文本（只对有根因输出的 case）
+            if (judgeActive && evalCase.expectRootCauseEvidence()
+                    && response.analysis() != null && response.analysis().rootCause() != null) {
+                String rootCauseJson = writeRootCauseJson(response.analysis().rootCause());
+                if (rootCauseJson != null) {
+                    rootCauseTexts.put(evalCase.id(), rootCauseJson);
+                }
+            }
             boolean casePassed = response.replyType() == evalCase.expectedReplyType()
                     && response.status() == evalCase.expectedStatus()
                     && (evalCase.expectedPriority() == null
@@ -101,7 +117,45 @@ public class EvalRunner {
                         entry.getValue().total - entry.getValue().passed
                 ))
                 .toList();
-        return new EvalReport(DEFAULT_SUITE, cases.size(), passed, cases.size() - passed, groupReports, failures);
+        return new EvalReport(DEFAULT_SUITE, cases.size(), passed, cases.size() - passed,
+                groupReports, failures, buildQualitySummary(cases, rootCauseTexts));
+    }
+
+    /**
+     * 构造质量评测汇总。judge 不可用时返回 skipped；否则对收集到的根因文本逐个调 judge 打分。
+     * judge 失败的 case 记 score=null，不计入平均分（降级）。
+     */
+    private EvalQualitySummary buildQualitySummary(List<EvalCase> cases, Map<String, String> rootCauseTexts) {
+        if (rootCauseTexts == null || rootCauseTexts.isEmpty()) {
+            return new EvalQualitySummary(true, 0.0, 0, List.of());
+        }
+        Map<String, EvalCase> caseById = cases.stream()
+                .collect(java.util.stream.Collectors.toMap(EvalCase::id, c -> c, (a, b) -> a));
+        List<EvalQualitySummary.CaseScore> scores = new ArrayList<>();
+        double sum = 0;
+        int scored = 0;
+        for (Map.Entry<String, String> entry : rootCauseTexts.entrySet()) {
+            EvalCase evalCase = caseById.get(entry.getKey());
+            if (evalCase == null) {
+                continue;
+            }
+            com.gcll.ticketagent.eval.judge.EvalQualityScore score = evalJudgeService.score(evalCase, entry.getValue());
+            scores.add(new EvalQualitySummary.CaseScore(entry.getKey(), score));
+            if (score != null) {
+                sum += score.score();
+                scored++;
+            }
+        }
+        double average = scored > 0 ? sum / scored : 0.0;
+        return new EvalQualitySummary(false, average, scored, scores);
+    }
+
+    private String writeRootCauseJson(Object rootCause) {
+        try {
+            return objectMapper.writeValueAsString(rootCause);
+        } catch (Exception ex) {
+            return null;
+        }
     }
 
     private List<EvalCase> loadCases(String path) {

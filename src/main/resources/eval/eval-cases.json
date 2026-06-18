@@ -45,7 +45,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应识别为支付回调处理异常，结合500错误与订单状态不一致定位回调逻辑/幂等问题"
   },
   {
     "id": "oom-killed",
@@ -69,7 +70,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应识别为JVM堆内存溢出(OOM)，结合heap space与内存飙升证据定位内存泄漏或容量不足"
   },
   {
     "id": "db-connection-timeout",
@@ -93,7 +95,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应识别为数据库连接超时，定位连接池耗尽、DB慢查询或网络问题"
   },
   {
     "id": "mfa-permission",
@@ -117,7 +120,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应识别为多因素认证(MFA)权限或配置问题"
   },
   {
     "id": "data-consistency",
@@ -141,7 +145,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应识别为数据一致性问题，涉及重复提交/幂等/状态同步"
   },
   {
     "id": "test-env-low-priority",
@@ -165,7 +170,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应判定为测试环境低优先级问题，不误判为生产故障"
   },
   {
     "id": "knowledge-no-hit",
@@ -189,7 +195,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应在知识库无命中时如实说明，不编造不存在的案例或结论"
   },
   {
     "id": "mq-backlog",
@@ -213,7 +220,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应识别为消息队列积压，定位消费速度不足或下游阻塞"
   },
   {
     "id": "cache-timeout",
@@ -237,7 +245,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应识别为缓存失效/超时导致穿透到后端"
   },
   {
     "id": "batch-semantic-followup",
@@ -309,7 +318,8 @@
     "expectSkipPlanActions": ["SIMILAR_CASE_SEARCH"],
     "expectSelectedTools": ["query_metric", "query_logs"],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "应识别OOM并优先用指标证据(内存指标)佐证"
   },
   {
     "id": "mfa-consult",
@@ -333,7 +343,8 @@
     "expectSkipPlanActions": ["SIMILAR_CASE_SEARCH", "QUERY_LOGS", "QUERY_METRIC"],
     "expectSelectedTools": [],
     "expectFailedTools": [],
-    "expectedIssueType": "CONSULT"
+    "expectedIssueType": "CONSULT",
+    "rootCauseRubric": "咨询类输入，不应强行给出故障根因，应区分咨询与故障"
   },
   {
     "id": "colloquial-payment-status",
@@ -501,7 +512,8 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": ["query_metric"],
     "expectFailedTools": ["query_logs"],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "日志工具失败时应在证据缺失下给出保守的根因假设，不编造日志内容"
   },
   {
     "id": "knowledge-degraded-continue",
@@ -525,6 +537,7 @@
     "expectSkipPlanActions": [],
     "expectSelectedTools": ["query_metric", "query_logs"],
     "expectFailedTools": [],
-    "expectedIssueType": null
+    "expectedIssueType": null,
+    "rootCauseRubric": "知识检索降级时应在证据不足下给出保守根因，不编造案例"
   }
 ]

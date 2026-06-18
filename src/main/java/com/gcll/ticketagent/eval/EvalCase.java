@@ -27,6 +27,8 @@ public record EvalCase(
         List<String> expectSkipPlanActions,
         List<String> expectSelectedTools,
         List<String> expectFailedTools,
-        String expectedIssueType
+        String expectedIssueType,
+        /** LLM-as-judge 根因评分标准；null 表示用通用 rubric。仅 expectRootCauseEvidence=true 时参与评分。 */
+        String rootCauseRubric
 ) {
 }
