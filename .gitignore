@@ -45,5 +45,8 @@ docker-compose.yml
 logs/
 *.log
 
+# Runtime-generated data (e.g. red-team adversarial cases — vet before committing)
+data/
+
 # Claude Code personal local config (team-shared settings.json is tracked)
 .claude/settings.local.json

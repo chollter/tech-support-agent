@@ -1,8 +1,42 @@
 ## 快速启动
 
+> 默认向量后端为 **PgVector**（复用主库 PostgreSQL，无需额外容器）。如需切换 Milvus，
+> 见下文「向量后端切换」。
+
+### 第 -1 步：构建 MCP server 子进程（仅首次/代码变更后，手动执行）
+
+主应用启动时会通过 STDIO 拉起一个独立的 MCP server 子进程（`ops-mcp-server`）来执行
+`query_logs` / `query_metric` 工具。该模块是**仓库内的独立工程**（根 pom 不含 `<modules>`，
+根目录 `mvn package` 不会打包它），需要单独构建一次：
+
 ```bash
-docker compose up -d
-mvn spring-boot:run -Dspring-boot.run.profiles=milvus
+mvn -f ops-mcp-server/pom.xml clean package -DskipTests
+```
+
+产出 `ops-mcp-server/target/ops-mcp-server-1.0.0-SNAPSHOT.jar`。`application.yml` 的
+`spring.ai.mcp.client.stdio.connections.ops-mcp-server` 默认指向这个路径（相对于仓库根）。
+
+> 如果只想跑主应用、不需要 MCP 工具查真实数据，可关闭子进程拉起（MCP 工具会降级返回"无证据"）：
+> `set MCP_ENABLED=false` 或 `--spring.ai.mcp.client.enabled=false`。否则缺失 jar 会导致
+> `Unable to access jarfile` 启动报错。
+
+### 第 0 步：准备数据库（仅首次，手动执行一次）
+
+需要一个运行中的 PostgreSQL（≥ 12 建议 15+）实例。用具备 superuser/createdb 权限的账号
+连接到默认库，执行建库脚本：
+
+```bash
+psql -U postgres -h localhost -d postgres -f src/main/resources/db/init-database.sql
+```
+
+该脚本会：创建库 `tech_support_agent`、确认应用账号、在库内安装 pgvector 扩展（vector /
+hstore / uuid-ossp）并授权。库名/账号默认值与 `application.yml` 一致（`tech_support_agent`
+/ `postgres` / `postgres`），可用环境变量覆盖（见下文「配置」）。
+
+### 第 1 步：启动应用
+
+```bash
+mvn spring-boot:run
 ```
 
 浏览器打开：
@@ -12,6 +46,45 @@ http://localhost:8020/
 ```
 
 如果没有配置 `LLM_API_KEY`，系统会走规则/模板降级，核心 Demo 仍可运行。
+
+### 脚本执行顺序总览
+
+| 顺序 | 脚本 / 机制 | 何时执行 | 作用 |
+|---|---|---|---|
+| **0** | `db/init-database.sql` | **手动**，仅首次（或环境重建时） | 建库 + 应用账号 + 安装 pgvector 扩展 |
+| **1** | `db/schema.sql` | 应用每次启动自动 | 建业务表（`agent_run` / `agent_step` / `knowledge_document` / `tool_execution_log` / `pending_action` / `ops_log_sample` / `ops_metric_sample`） |
+| **2** | `db/data-knowledge.sql` | 应用每次启动自动 | 灌知识库种子数据（SOP / Runbook / 历史故障等） |
+| **3** | `PgVectorStoreConfig`（`initializeSchema=true`） | 应用首次启动自动 | 建 `vector_store` 表 + HNSW 索引（依赖第 0 步已装扩展） |
+| —（手动）| `db/pgvector-init.sql` | 仅当选择「预建表」路径时手动跑 | 预建 `vector_store` 表（此时需把 `PgVectorStoreConfig` 的 `initializeSchema` 改为 `false`） |
+
+> 顺序 1/2 由 `application.yml` 的 `spring.sql.init.mode: always` 驱动；顺序 3 由
+> Spring AI 的 `PgVectorStore` 在应用启动时执行。只有第 0 步和（可选的）pgvector-init
+> 需要人手执行，其余全自动。
+
+### 配置
+
+默认连接 `localhost:5432/tech_support_agent`，账号 `postgres/postgres`。通过环境变量覆盖：
+
+```bash
+set PG_HOST=localhost
+set PG_PORT=5432
+set PG_DATABASE=tech_support_agent
+set PG_USER=postgres
+set PG_PASSWORD=postgres
+set LLM_API_KEY=你的DashScope密钥
+set LLM_MODEL=qwen-plus
+```
+
+### 向量后端切换（可选）
+
+默认 PgVector（零额外容器）。如需 Milvus：
+
+```bash
+docker compose up -d
+mvn spring-boot:run -Dspring-boot.run.profiles=milvus
+```
+
+`milvus` profile 会激活 `MilvusVectorStoreConfig`（`@Profile("milvus")`）覆盖默认的 PgVector Bean。
 
 ## 常用接口
 
