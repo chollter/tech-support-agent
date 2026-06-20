@@ -24,9 +24,15 @@ public class RuleBasedTicketExtractService implements TicketExtractService {
         IssueType issueType = detectIssueType(lower);
         String affectedSystem = extractSystem(text);
         String affectedModule = extractModule(text, lower);
-        String apiName = extractApiName(text);
-        String errorCode = extractErrorCode(text);
-        String errorMessage = extractErrorMessage(text, lower);
+        // 咨询/需求类不抽 apiName/errorCode/errorMessage——这些是故障字段，
+        // 给咨询类抽出"MFA 重置""支付系统"这类带故障语义的值会误导下游根因分析，
+        // 导致 CONSULT 被当成故障编造根因（judge 1/5 幻觉的根因）。
+        String apiName = (issueType == IssueType.CONSULT || issueType == IssueType.REQUIREMENT)
+                ? null : extractApiName(text);
+        String errorCode = (issueType == IssueType.CONSULT || issueType == IssueType.REQUIREMENT)
+                ? null : extractErrorCode(text);
+        String errorMessage = (issueType == IssueType.CONSULT || issueType == IssueType.REQUIREMENT)
+                ? null : extractErrorMessage(text, lower);
         String environment = extractEnvironment(lower);
         String impactScope = extractImpactScope(lower);
         String timeRange = extractTimeRange(text);

@@ -116,6 +116,56 @@ body {
   color: var(--danger);
 }
 
+.eval-warn {
+  color: var(--warning);
+  font-weight: 600;
+}
+
+.eval-judge-section {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 1px solid var(--border);
+}
+
+.eval-scores {
+  list-style: none;
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.eval-score-item {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.82rem;
+}
+
+.eval-score-item:last-child {
+  border-bottom: none;
+}
+
+.eval-case-id {
+  font-family: "Cascadia Code", "Consolas", monospace;
+  color: var(--info);
+  font-size: 0.8rem;
+}
+
+.eval-no-score {
+  color: var(--text-muted);
+  font-size: 0.78rem;
+}
+
+.eval-score-reason {
+  flex-basis: 100%;
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  line-height: 1.4;
+}
+
 .eval-failures {
   padding-left: 1.1rem;
   margin-top: 0.3rem;

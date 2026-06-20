@@ -378,6 +378,42 @@
         report.failures.forEach((f) => { html += '<li class="eval-fail">' + esc(f) + '</li>'; });
         html += '</ul>';
       }
+      // judge 质量评分（EVAL_JUDGE_ENABLED=true 时才有）
+      const qs = report.qualitySummary;
+      if (qs && !qs.skipped) {
+        const score = qs.averageScore;
+        const scoreClass = score >= 4 ? 'eval-pass' : (score >= 3 ? 'eval-warn' : 'eval-fail');
+        html += '<div class="eval-judge-section">';
+        html += '<p class="' + scoreClass + '" style="font-size:1rem;margin:0.75rem 0 0.25rem">根因质量平均分：'
+          + (typeof score === 'number' ? score.toFixed(2) : score) + ' / 5'
+          + ' <span class="hint">（评了 ' + qs.scoredCount + ' 条）</span></p>';
+        html += '<p class="hint">各 case 根因评分（分数低 = 根因质量差）：</p>';
+        html += '<ul class="eval-scores">';
+        if (qs.scores) {
+          // 低分排前面，便于快速定位问题
+          const sorted = qs.scores.slice().sort((a, b) => {
+            const sa = a.score ? a.score.score : 6;
+            const sb = b.score ? b.score.score : 6;
+            return sa - sb;
+          });
+          sorted.forEach((cs) => {
+            const s = cs.score;
+            if (!s) {
+              html += '<li class="eval-score-item"><span class="eval-case-id">' + esc(cs.caseId)
+                + '</span><span class="eval-no-score">未评分</span></li>';
+            } else {
+              const c = s.score >= 4 ? 'eval-pass' : (s.score >= 3 ? 'eval-warn' : 'eval-fail');
+              html += '<li class="eval-score-item"><span class="eval-case-id">' + esc(cs.caseId)
+                + '</span><span class="' + c + '">' + s.score + '/5</span>'
+                + (s.reason ? '<div class="eval-score-reason">' + esc(s.reason) + '</div>' : '')
+                + '</li>';
+            }
+          });
+        }
+        html += '</ul></div>';
+      } else if (qs && qs.skipped) {
+        html += '<p class="hint" style="margin-top:0.75rem">质量评分未启用（设 EVAL_JUDGE_ENABLED=true 开启根因质量评分）</p>';
+      }
       box.innerHTML = html;
       showToast(report.failed === 0 ? 'Eval 全部通过' : 'Eval 存在 ' + report.failed + ' 个失败', report.failed > 0);
     } catch (err) {

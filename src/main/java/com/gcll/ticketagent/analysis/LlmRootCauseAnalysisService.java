@@ -75,13 +75,18 @@ public class LlmRootCauseAnalysisService implements RootCauseAnalysisService {
             sb.append("无工具取证结果\n");
         } else {
             for (ToolResult toolResult : toolResults) {
-                sb.append("- tool=").append(toolResult.toolName())
-                        .append(", type=").append(toolResult.toolType())
-                        .append(", success=").append(toolResult.success())
-                        .append(", input=").append(toolResult.input())
-                        .append(", output=").append(toolResult.output())
-                        .append(", error=").append(toolResult.errorMessage())
-                        .append("\n");
+                if (toolResult.success()) {
+                    // 成功的工具调用：其 output 是真实证据，可引用
+                    sb.append("- [成功] tool=").append(toolResult.toolName())
+                            .append(", output=").append(toolResult.output())
+                            .append("\n");
+                } else {
+                    // 失败的工具调用：这是工具本身不可用，【不是】工单的故障原因。
+                    // 明确标注，防止 LLM 把工具的 errorMessage 当成根因证据。
+                    sb.append("- [失败-工具不可用，非工单证据] tool=").append(toolResult.toolName())
+                            .append(", error=").append(toolResult.errorMessage())
+                            .append("（此为工具调用失败，不得作为工单根因依据）\n");
+                }
             }
         }
         return sb.toString();
