@@ -19,28 +19,8 @@
       <h2>提交工单</h2>
       <form id="submitForm">
         <div class="field-row">
-          <label for="sessionId">会话 ID</label>
-          <input id="sessionId" name="sessionId" value="sess-web-001" required>
-        </div>
-        <div class="field-row">
-          <label for="userId">用户 ID</label>
-          <input id="userId" name="userId" value="u-1001" required>
-        </div>
-        <div class="field-row">
-          <label for="title">标题（可选）</label>
-          <input id="title" name="title" placeholder="简要标题">
-        </div>
-        <div class="field-row">
           <label for="content">故障描述</label>
-          <textarea id="content" name="content" rows="6" required placeholder="请描述故障现象、环境、影响范围等…"></textarea>
-        </div>
-        <div class="field-row">
-          <label for="source">来源</label>
-          <select id="source" name="source">
-            <option value="WEB" selected>WEB</option>
-            <option value="IM">IM</option>
-            <option value="EMAIL">EMAIL</option>
-          </select>
+          <textarea id="content" name="content" rows="8" required placeholder="请描述故障现象、环境、影响范围等…"></textarea>
         </div>
         <div class="btn-group">
           <button type="submit" class="btn btn-primary" id="submitBtn">提交分析</button>
@@ -69,19 +49,16 @@
       <div id="messageBox" class="message-box hidden"></div>
       <div id="questionsBox" class="questions-box hidden"></div>
       <div id="analysisBox" class="analysis-box hidden"></div>
+      <div id="confirmBox" class="confirm-box hidden">
+        <div class="human-alert" id="confirmReason">⚠ 需要人工确认</div>
+        <div class="confirm-actions">
+          <button type="button" class="btn btn-success btn-sm" id="confirmBtn">确认执行</button>
+          <button type="button" class="btn btn-danger btn-sm" id="rejectBtn">驳回</button>
+        </div>
+      </div>
       <div id="emptyState" class="empty-state">
         <p>提交工单后，分析结果将显示在这里。</p>
       </div>
-    </section>
-
-    <section class="panel steps-panel">
-      <div class="panel-header-row">
-        <h2>Agent 执行步骤</h2>
-        <button type="button" class="btn btn-ghost btn-sm" id="refreshAuditBtn" disabled>刷新审计</button>
-      </div>
-      <ul id="stepList" class="step-list">
-        <li class="step-empty">暂无步骤</li>
-      </ul>
     </section>
 
     <section class="panel eval-panel">
@@ -90,18 +67,18 @@
         <button type="button" class="btn btn-primary btn-sm" id="runEvalBtn">运行 Eval</button>
       </div>
       <div id="evalResult" class="eval-result">
-        <p class="hint">点击运行，验证独立数据集中的回归与扰动场景。</p>
+        <p class="hint">运行 22 个样本，验证 Agent 在真 LLM 下的通过率。首次较慢（每条都要调 LLM）。</p>
       </div>
     </section>
 
     <section class="panel knowledge-panel">
       <div class="panel-header-row">
-        <h2>知识库导入</h2>
+        <h2>知识库</h2>
         <button type="button" class="btn btn-ghost btn-sm" id="refreshKnowledgeBtn">刷新</button>
       </div>
       <form id="knowledgeForm" class="knowledge-form">
         <div class="field-row">
-          <label for="knowledgeFile">文档（Markdown / TXT）</label>
+          <label for="knowledgeFile">上传文档（Markdown / TXT，≤512KB）</label>
           <input id="knowledgeFile" name="file" type="file" accept=".md,.txt,text/markdown,text/plain" required>
         </div>
         <div class="field-row">
@@ -120,22 +97,12 @@
         </div>
         <div class="field-row">
           <label for="knowledgeTags">标签</label>
-          <input id="knowledgeTags" name="tags" placeholder="例如：库存,出库,MQ,outbox">
+          <input id="knowledgeTags" name="tags" placeholder="例如：库存,出库,MQ">
         </div>
-        <button type="submit" class="btn btn-primary" id="knowledgeUploadBtn">导入知识</button>
+        <button type="submit" class="btn btn-primary btn-sm" id="knowledgeUploadBtn">导入知识</button>
       </form>
       <ul id="knowledgeList" class="knowledge-list">
         <li class="knowledge-empty">暂无导入记录</li>
-      </ul>
-    </section>
-
-    <section class="panel human-panel">
-      <div class="panel-header-row">
-        <h2>待人工确认</h2>
-        <button type="button" class="btn btn-ghost btn-sm" id="refreshPendingBtn">刷新</button>
-      </div>
-      <ul id="pendingList" class="pending-list">
-        <li class="pending-empty">暂无待确认项</li>
       </ul>
     </section>
   </main>

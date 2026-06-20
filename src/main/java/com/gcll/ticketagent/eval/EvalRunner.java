@@ -6,6 +6,7 @@ import com.gcll.ticketagent.api.dto.ReplyType;
 import com.gcll.ticketagent.api.dto.SubmitAgentRunRequest;
 import com.gcll.ticketagent.domain.AgentRunStatus;
 import com.gcll.ticketagent.domain.AgentStep;
+import com.gcll.ticketagent.eval.adversarial.AdversarialCaseStore;
 import com.gcll.ticketagent.eval.judge.EvalJudgeService;
 import com.gcll.ticketagent.persistence.repository.AgentRunRepository;
 import com.gcll.ticketagent.persistence.repository.ToolExecutionLogRepository;
@@ -35,23 +36,41 @@ public class EvalRunner {
     private final ToolExecutionLogRepository toolExecutionLogRepository;
     private final ObjectMapper objectMapper;
     private final EvalJudgeService evalJudgeService;
+    private final AdversarialCaseStore adversarialCaseStore;
 
     public EvalRunner(
             TicketApplicationService ticketApplicationService,
             AgentRunRepository agentRunRepository,
             ToolExecutionLogRepository toolExecutionLogRepository,
             ObjectMapper objectMapper,
-            EvalJudgeService evalJudgeService
+            EvalJudgeService evalJudgeService,
+            AdversarialCaseStore adversarialCaseStore
     ) {
         this.ticketApplicationService = ticketApplicationService;
         this.agentRunRepository = agentRunRepository;
         this.toolExecutionLogRepository = toolExecutionLogRepository;
         this.objectMapper = objectMapper;
         this.evalJudgeService = evalJudgeService;
+        this.adversarialCaseStore = adversarialCaseStore;
     }
 
+    /**
+     * 默认只跑 golden 套件（行为与历史完全一致，保护 {@code EvalRunnerTest}）。
+     */
     public EvalReport run() {
-        List<EvalCase> cases = loadCases(DEFAULT_SUITE);
+        return run(false);
+    }
+
+    /**
+     * 运行 Eval。{@code includeAdversarial=true} 时在 golden 套件后追加
+     * {@link AdversarialCaseStore#load()} 的对抗 case（无文件时返回空，行为等价默认）。
+     * 其余断言逻辑零改动。
+     */
+    public EvalReport run(boolean includeAdversarial) {
+        List<EvalCase> cases = new ArrayList<>(loadCases(DEFAULT_SUITE));
+        if (includeAdversarial) {
+            cases.addAll(adversarialCaseStore.load());
+        }
 
         int passed = 0;
         List<String> failures = new ArrayList<>();

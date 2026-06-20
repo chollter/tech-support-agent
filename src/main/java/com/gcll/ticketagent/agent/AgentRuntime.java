@@ -65,9 +65,23 @@ public class AgentRuntime {
         try {
             return doExecute(run, draft);
         } catch (Exception ex) {
-            log.warn("Agent run failed, runId={}, error={}", run.getId(), ex.getMessage());
+            // 记录完整异常类名 + 堆栈。很多异常（如 NPE）getMessage() 为 null，
+            // 只记 message 会丢失根因（表现为 error=null）。issueType={}/step 帮助定位失败环节。
+            log.warn("Agent run failed, runId={}, issueType={}, step={}, exception={}, message={}",
+                    run.getId(), run.getIssueType(), lastStepHint(run),
+                    ex.getClass().getName(),
+                    ex.getMessage() == null ? "(no message)" : ex.getMessage(),
+                    ex);
             return failRun(run, draft, ex);
         }
+    }
+
+    /** 失败时给出当前已执行到的步骤提示，辅助定位。 */
+    private String lastStepHint(AgentRun run) {
+        if (run.getSteps() == null || run.getSteps().isEmpty()) {
+            return "unknown";
+        }
+        return run.getSteps().get(run.getSteps().size() - 1).getStepName();
     }
 
     private AgentRunResponse doExecute(AgentRun run, TicketDraft draft) {
@@ -118,9 +132,12 @@ public class AgentRuntime {
     }
 
     private AgentRunResponse failRun(AgentRun run, TicketDraft draft, Exception ex) {
+        // 记录异常类名 + message，避免 NPE 等 message=null 时审计里只剩 "null"
+        String errorDetail = ex.getClass().getSimpleName()
+                + (ex.getMessage() == null ? "" : ": " + ex.getMessage());
         transactionTemplate.executeWithoutResult(status -> {
             auditLogService.recordStep(run, AgentStepName.FINAL, draft.fullContent(), "failed",
-                    false, null, 0, ex.getMessage());
+                    false, null, 0, errorDetail);
             run.setStatus(AgentRunStatus.FAILED);
             agentRunRepository.save(run);
         });

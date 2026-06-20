@@ -2,21 +2,24 @@
   'use strict';
 
   const API = '/api';
+  // 固定会话/用户标识——验证 Agent 效果时这些字段不是关注点，去掉输入框减少噪音。
+  const SESSION_ID = 'sess-web-' + Date.now();
+  const USER_ID = 'u-1001';
   let currentRunId = null;
-  let eventSource = null;
 
   const $ = (id) => document.getElementById(id);
 
   const submitForm = $('submitForm');
   const supplementSection = $('supplementSection');
   const supplementBtn = $('supplementBtn');
-  const refreshAuditBtn = $('refreshAuditBtn');
-  const refreshPendingBtn = $('refreshPendingBtn');
-  const runEvalBtn = $('runEvalBtn');
-  const knowledgeForm = $('knowledgeForm');
-  const refreshKnowledgeBtn = $('refreshKnowledgeBtn');
   const sampleIncomplete = $('sampleIncomplete');
   const sampleComplete = $('sampleComplete');
+  const knowledgeForm = $('knowledgeForm');
+  const refreshKnowledgeBtn = $('refreshKnowledgeBtn');
+  const confirmBtn = $('confirmBtn');
+  const rejectBtn = $('rejectBtn');
+  // 当前 WAIT_HUMAN_CONFIRM 对应的 pendingAction id（用于确认/驳回）
+  let currentPendingId = null;
 
   function showToast(msg, isError) {
     const toast = $('toast');
@@ -39,89 +42,6 @@
   function setLoading(loading) {
     $('submitBtn').disabled = loading;
     supplementBtn.disabled = loading;
-  }
-
-  function setKnowledgeLoading(loading) {
-    $('knowledgeUploadBtn').disabled = loading;
-  }
-
-  function closeSSE() {
-    if (eventSource) {
-      eventSource.close();
-      eventSource = null;
-    }
-  }
-
-  function connectSSE(runId) {
-    closeSSE();
-    eventSource = new EventSource(`${API}/tickets/agent-runs/${runId}/stream`);
-    eventSource.addEventListener('step', (e) => {
-      try {
-        const data = JSON.parse(e.data);
-        appendStep(data.stepName, data.status, data.message, data.timestamp, false, 0);
-      } catch (_) { /* ignore */ }
-    });
-    eventSource.onerror = () => closeSSE();
-  }
-
-  function clearSteps() {
-    const list = $('stepList');
-    list.innerHTML = '<li class="step-empty">等待 Agent 执行…</li>';
-  }
-
-  function appendStep(stepName, status, message, timestamp, llmUsed, costMs, isGate) {
-    const list = $('stepList');
-    const empty = list.querySelector('.step-empty');
-    if (empty) empty.remove();
-
-    const li = document.createElement('li');
-    li.className = 'step-item' + (isGate ? ' step-gate' : '');
-    const statusClass = status === 'SUCCESS' ? 'step-status-success' : 'step-status-failed';
-    const time = timestamp ? new Date(timestamp).toLocaleTimeString() : '';
-    let llmTag = '';
-    if (llmUsed) {
-      llmTag = '<span class="step-llm-tag">LLM</span>';
-      if (costMs > 0) {
-        llmTag += '<span class="step-cost"> ' + costMs + 'ms</span>';
-      }
-    }
-    li.innerHTML =
-      '<div><span class="step-name">' + esc(stepName) + '</span> ' +
-      '<span class="' + statusClass + '">' + esc(status) + '</span>' + llmTag +
-      (isGate ? ' <span class="step-llm-tag" style="background:rgba(245,158,11,0.2);color:#fcd34d">流程终止</span>' : '') +
-      '</div>' +
-      (time ? '<div class="step-meta">' + time + '</div>' : '') +
-      (message ? '<div class="step-output">' + esc(truncate(message, 120)) + '</div>' : '');
-    list.appendChild(li);
-    list.scrollTop = list.scrollHeight;
-  }
-
-  function renderAuditSteps(steps, gateAt) {
-    const list = $('stepList');
-    list.innerHTML = '';
-    if (!steps || steps.length === 0) {
-      list.innerHTML = '<li class="step-empty">暂无步骤</li>';
-      return;
-    }
-    steps.forEach((s) => {
-      const isGate = gateAt && s.stepName === gateAt;
-      appendStep(
-        s.stepName,
-        s.status,
-        s.outputSnapshot,
-        s.createdAt ? Date.parse(s.createdAt) : null,
-        s.llmUsed,
-        s.costMs || 0,
-        isGate
-      );
-    });
-  }
-
-  function gateStepForResponse(data) {
-    if (data.replyType === 'NEED_MORE_INFO') {
-      return 'FOLLOW_UP_QUESTION_GENERATE';
-    }
-    return null;
   }
 
   function renderResponse(data) {
@@ -165,9 +85,17 @@
     }
 
     supplementSection.classList.toggle('hidden', data.status !== 'WAIT_USER_INPUT');
-    refreshAuditBtn.disabled = false;
 
-    return gateStepForResponse(data);
+    // HITL：P1/P2 工单进入 WAIT_HUMAN_CONFIRM 时，显示确认/驳回按钮
+    const confirmBox = $('confirmBox');
+    if (data.status === 'WAIT_HUMAN_CONFIRM' && data.analysis && data.analysis.humanConfirm) {
+      $('confirmReason').textContent = '⚠ 需要人工确认：' + (data.analysis.humanConfirm.reason || '高优先级工单');
+      confirmBox.classList.remove('hidden');
+      loadPendingForCurrentRun();
+    } else {
+      confirmBox.classList.add('hidden');
+      currentPendingId = null;
+    }
   }
 
   function renderAnalysis(a, aiGenerated) {
@@ -266,22 +194,15 @@
     return d.innerHTML;
   }
 
-  function truncate(str, len) {
-    if (!str || str.length <= len) return str;
-    return str.slice(0, len) + '…';
-  }
-
   async function submitTicket(e) {
     e.preventDefault();
     setLoading(true);
-    clearSteps();
 
     const payload = {
-      sessionId: $('sessionId').value.trim(),
-      userId: $('userId').value.trim(),
-      title: $('title').value.trim() || undefined,
+      sessionId: SESSION_ID,
+      userId: USER_ID,
       content: $('content').value.trim(),
-      source: $('source').value
+      source: 'WEB'
     };
 
     try {
@@ -290,11 +211,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      connectSSE(data.runId);
-      const gateAt = renderResponse(data);
-      await loadAudit(data.runId, gateAt);
-      if (data.status === 'WAIT_HUMAN_CONFIRM') loadPending();
-      showToast('工单已提交并完成分析');
+      renderResponse(data);
+      showToast(data.status === 'WAIT_USER_INPUT' ? 'Agent 需要更多信息' : '工单已分析完成');
     } catch (err) {
       showToast(err.message, true);
     } finally {
@@ -316,10 +234,8 @@
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content })
       });
-      const gateAt = renderResponse(data);
+      renderResponse(data);
       $('supplementContent').value = '';
-      await loadAudit(currentRunId, gateAt);
-      if (data.status === 'WAIT_HUMAN_CONFIRM') loadPending();
       showToast('补充信息已发送');
     } catch (err) {
       showToast(err.message, true);
@@ -328,49 +244,53 @@
     }
   }
 
-  async function loadAudit(runId, gateAt) {
-    if (!runId) return;
+  sampleIncomplete.addEventListener('click', () => {
+    $('content').value = '接口报错了';
+  });
+
+  sampleComplete.addEventListener('click', () => {
+    $('content').value =
+      '生产环境，支付系统的 /pay/callback 接口 500，从上午 10 点开始，多个用户支付成功但订单状态还是待支付。';
+  });
+
+  // ---- HITL 人工确认 ----
+
+  // 找到当前 run 对应的 pendingAction，记录其 id 供确认/驳回使用
+  async function loadPendingForCurrentRun() {
+    if (!currentRunId) return;
     try {
-      const steps = await apiFetch(`${API}/audit/agent-runs/${runId}`);
-      renderAuditSteps(steps, gateAt);
-    } catch (_) { /* optional */ }
+      const items = await apiFetch(`${API}/human/pending`);
+      const match = items && items.find((p) => p.runId === currentRunId);
+      currentPendingId = match ? match.id : null;
+    } catch (_) { /* 可选，忽略 */ }
   }
 
-  async function runEval() {
-    runEvalBtn.disabled = true;
-    const box = $('evalResult');
+  async function handleConfirm(confirm) {
+    if (!currentPendingId) {
+      showToast('未找到待确认项', true);
+      return;
+    }
+    const url = confirm
+      ? `${API}/human/pending/${currentPendingId}/confirm`
+      : `${API}/human/pending/${currentPendingId}/reject`;
+    const body = confirm
+      ? { confirmedBy: 'operator-web' }
+      : { confirmedBy: 'operator-web' };
     try {
-      const report = await apiFetch(`${API}/evals/run`, { method: 'POST' });
-      const passClass = report.failed === 0 ? 'eval-pass' : 'eval-fail';
-      let html = '<p class="' + passClass + '">通过 ' + report.passed + ' / ' + report.total + '</p>';
-      if (report.suiteName) {
-        html += '<p class="hint">数据集：' + esc(report.suiteName) + '</p>';
-      }
-      if (report.groups && report.groups.length) {
-        html += '<div class="eval-groups">';
-        report.groups.forEach((group) => {
-          const groupClass = group.failed === 0 ? 'eval-pass' : 'eval-fail';
-          html += '<div class="eval-group-item">' +
-            '<span>' + esc(group.name) + '</span>' +
-            '<span class="' + groupClass + '">' + group.passed + ' / ' + group.total + '</span>' +
-            '</div>';
-        });
-        html += '</div>';
-      }
-      if (report.failures && report.failures.length) {
-        html += '<ul>';
-        report.failures.forEach((f) => { html += '<li class="eval-fail">' + esc(f) + '</li>'; });
-        html += '</ul>';
-      }
-      box.innerHTML = html;
-      showToast(report.failed === 0 ? 'Eval 全部通过' : 'Eval 存在失败', report.failed > 0);
+      const run = await apiFetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      $('statusBadge').textContent = run.status;
+      $('confirmBox').classList.add('hidden');
+      showToast(confirm ? '已确认' : '已驳回');
     } catch (err) {
-      box.innerHTML = '<p class="eval-fail">' + esc(err.message) + '</p>';
       showToast(err.message, true);
-    } finally {
-      runEvalBtn.disabled = false;
     }
   }
+
+  // ---- 知识库上传 ----
 
   async function uploadKnowledge(e) {
     e.preventDefault();
@@ -379,7 +299,7 @@
       showToast('请选择知识文档', true);
       return;
     }
-    setKnowledgeLoading(true);
+    $('knowledgeUploadBtn').disabled = true;
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -398,7 +318,7 @@
     } catch (err) {
       showToast(err.message, true);
     } finally {
-      setKnowledgeLoading(false);
+      $('knowledgeUploadBtn').disabled = false;
     }
   }
 
@@ -412,17 +332,18 @@
   async function loadKnowledge() {
     const list = $('knowledgeList');
     try {
-      const docs = await apiFetch(`${API}/knowledge/documents?limit=8`);
+      const docs = await apiFetch(`${API}/knowledge/documents?limit=10`);
       if (!docs || docs.length === 0) {
-        list.innerHTML = '<li class="knowledge-empty">暂无导入记录</li>';
+        list.innerHTML = '<li class="knowledge-empty">暂无导入记录（启动时自带种子知识，未计入此列表）</li>';
         return;
       }
       list.innerHTML = docs.map((doc) => {
-        const meta = [doc.systemName, doc.moduleName, doc.tags].filter(Boolean).join(' / ');
+        const meta = [doc.systemName, doc.moduleName].filter(Boolean).join(' / ');
         return '<li class="knowledge-item">' +
-          '<div><strong>' + esc(doc.title) + '</strong><span class="knowledge-source">' + esc(doc.sourceType || '') + '</span></div>' +
+          '<div><strong>' + esc(doc.title) + '</strong>' +
+          (doc.sourceType ? '<span class="knowledge-source">' + esc(doc.sourceType) + '</span></div>' : '</div>') +
           (meta ? '<div class="step-meta">' + esc(meta) + '</div>' : '') +
-          '<div class="knowledge-summary">' + esc(doc.summary || '') + '</div>' +
+          (doc.summary ? '<div class="knowledge-summary">' + esc(doc.summary) + '</div>' : '') +
           '</li>';
       }).join('');
     } catch (err) {
@@ -430,80 +351,50 @@
     }
   }
 
-  async function loadPending() {
-    const list = $('pendingList');
-    try {
-      const items = await apiFetch(`${API}/human/pending`);
-      if (!items || items.length === 0) {
-        list.innerHTML = '<li class="pending-empty">暂无待确认项</li>';
-        return;
-      }
-      list.innerHTML = items.map((p) =>
-        '<li class="pending-item" data-id="' + esc(p.id) + '" data-action="' + esc(p.actionType) + '">' +
-        '<span><strong>' + esc(p.actionType) + '</strong> — Run ' + esc(p.runId.slice(0, 8)) + '…</span>' +
-        '<span class="step-meta">' + esc(p.reason || '') + '</span>' +
-        '<div class="pending-actions">' +
-        '<button type="button" class="btn btn-sm btn-success confirm-btn">确认</button>' +
-        '<button type="button" class="btn btn-sm btn-danger reject-btn">驳回</button>' +
-        '</div></li>'
-      ).join('');
+  // ---- 回归 Eval ----
 
-      list.querySelectorAll('.confirm-btn').forEach((btn) => {
-        btn.addEventListener('click', () => handlePending(btn.closest('.pending-item'), true));
-      });
-      list.querySelectorAll('.reject-btn').forEach((btn) => {
-        btn.addEventListener('click', () => handlePending(btn.closest('.pending-item'), false));
-      });
-    } catch (err) {
-      list.innerHTML = '<li class="pending-empty">加载失败</li>';
-    }
-  }
-
-  async function handlePending(item, confirm) {
-    const id = item.dataset.id;
-    const actionType = item.dataset.action;
-    const url = confirm
-      ? `${API}/human/pending/${id}/confirm`
-      : `${API}/human/pending/${id}/reject`;
-    const body = confirm
-      ? { confirmedBy: 'operator-web', actionType }
-      : { confirmedBy: 'operator-web' };
+  async function runEval() {
+    const btn = $('runEvalBtn');
+    const box = $('evalResult');
+    btn.disabled = true;
+    box.innerHTML = '<p class="hint">运行中（22 个样本逐条调 LLM，约 1-2 分钟）…</p>';
     try {
-      await apiFetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      });
-      showToast(confirm ? '已确认' : '已驳回');
-      loadPending();
-      if (currentRunId) {
-        const run = await apiFetch(`${API}/tickets/agent-runs/${currentRunId}`);
-        $('statusBadge').textContent = run.status;
+      const report = await apiFetch(`${API}/evals/run`, { method: 'POST' });
+      const passClass = report.failed === 0 ? 'eval-pass' : 'eval-fail';
+      let html = '<p class="' + passClass + '">通过 ' + report.passed + ' / ' + report.total + '</p>';
+      if (report.groups && report.groups.length) {
+        html += '<div class="eval-groups">';
+        report.groups.forEach((group) => {
+          const groupClass = group.failed === 0 ? 'eval-pass' : 'eval-fail';
+          html += '<div class="eval-group-item">' +
+            '<span>' + esc(group.name) + '</span>' +
+            '<span class="' + groupClass + '">' + group.passed + ' / ' + group.total + '</span>' +
+            '</div>';
+        });
+        html += '</div>';
       }
+      if (report.failures && report.failures.length) {
+        html += '<p class="hint" style="margin-top:0.5rem">失败项：</p><ul class="eval-failures">';
+        report.failures.forEach((f) => { html += '<li class="eval-fail">' + esc(f) + '</li>'; });
+        html += '</ul>';
+      }
+      box.innerHTML = html;
+      showToast(report.failed === 0 ? 'Eval 全部通过' : 'Eval 存在 ' + report.failed + ' 个失败', report.failed > 0);
     } catch (err) {
+      box.innerHTML = '<p class="eval-fail">' + esc(err.message) + '</p>';
       showToast(err.message, true);
+    } finally {
+      btn.disabled = false;
     }
   }
-
-  sampleIncomplete.addEventListener('click', () => {
-    $('content').value = '接口报错了';
-    $('title').value = '';
-  });
-
-  sampleComplete.addEventListener('click', () => {
-    $('content').value =
-      '生产环境，支付系统的 /pay/callback 接口 500，从上午 10 点开始，多个用户支付成功但订单状态还是待支付。';
-    $('title').value = '支付回调异常';
-  });
 
   submitForm.addEventListener('submit', submitTicket);
-  knowledgeForm.addEventListener('submit', uploadKnowledge);
   supplementBtn.addEventListener('click', supplementMessage);
-  refreshAuditBtn.addEventListener('click', () => loadAudit(currentRunId, null));
-  refreshPendingBtn.addEventListener('click', loadPending);
+  confirmBtn.addEventListener('click', () => handleConfirm(true));
+  rejectBtn.addEventListener('click', () => handleConfirm(false));
+  knowledgeForm.addEventListener('submit', uploadKnowledge);
   refreshKnowledgeBtn.addEventListener('click', loadKnowledge);
-  runEvalBtn.addEventListener('click', runEval);
+  $('runEvalBtn').addEventListener('click', runEval);
 
-  loadPending();
   loadKnowledge();
 })();

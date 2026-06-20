@@ -31,7 +31,7 @@ spring:
     mcp:
       client:
         # 默认关闭：测试/无 PG 环境下不拉起 server 子进程；生产/演示时设 MCP_ENABLED=true
-        enabled: ${MCP_ENABLED:false}
+        enabled: ${MCP_ENABLED:true}
         name: tech-support-mcp-client
         version: 1.0.0
         type: SYNC
@@ -39,10 +39,12 @@ spring:
           connections:
             ops-mcp-server:
               # stdio 子进程：应用拉起 ops-mcp-server jar，经 stdin/stdout 通信
+              # 注意：默认路径相对于「主应用运行目录」（仓库根），ops-mcp-server 是仓库内的独立模块
+              # （根 pom 不含 <modules>，根目录 mvn package 不会自动打包它，需单独构建，见 README）
               command: ${MCP_SERVER_JAVA:java}
               args:
                 - "-jar"
-                - ${MCP_SERVER_JAR:../ops-mcp-server/target/ops-mcp-server-1.0.0-SNAPSHOT.jar}
+                - ${MCP_SERVER_JAR:ops-mcp-server/target/ops-mcp-server-1.0.0-SNAPSHOT.jar}
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -98,6 +100,13 @@ opsmind:
       # LLM-as-judge 质量评测：默认关闭，开启后 EvalRunner 对根因输出打 1-5 分。
       # 关闭时 EvalReport.qualitySummary.skipped=true，不影响现有流程断言。
       enabled: ${EVAL_JUDGE_ENABLED:false}
+    adversarial:
+      # 红队闭环：POST /api/evals/adversarial/generate 生成对抗工单 → 跑进 Agent →
+      # LLM 裁判判定 → 把 fail 的输入沉淀进 output-path（独立于 golden 套件）。
+      # POST /api/evals/run?includeAdversarial=true 才会合并对抗 case 进主回归。
+      output-path: ${ADVERSARIAL_CASES_PATH:data/eval/adversarial-cases.json}
+      default-count: ${ADVERSARIAL_DEFAULT_COUNT:8}
+      strategies: OMIT_FIELD,CONTRADICTION,CROSS_DOMAIN,COLLOQUIAL,NON_INCIDENT,NOISE
   resilience:
     # 通配 key（* 结尾）作为前缀规则：未显式列出的 callName 按前缀自动继承策略，
     # 新增调用点零配置即纳入治理，防遗漏裸奔。精确 key 优先于前缀规则（见 CallRegistry.get）。
