@@ -6,15 +6,15 @@ import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
+// 不再 @Primary：融合层 RrfKnowledgeSearchService 成为新的 @Primary，本类降为融合层的内部向量路组件。
+// 融合层关闭时（opsmind.rag.fusion.enabled=false）或无 VectorStore 时，本类不主导注入。
 @Service
-@Primary
 @ConditionalOnBean(VectorStore.class)
 public class VectorKnowledgeSearchService implements KnowledgeSearchService {
 

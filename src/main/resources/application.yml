@@ -95,6 +95,12 @@ opsmind:
       enabled: ${RERANK_ENABLED:false}
       model: ${RERANK_MODEL:gte-rerank-v2}
       endpoint: ${RERANK_ENDPOINT:https://dashscope.aliyuncs.com/api/v1/services/rerank/text-rerank/}
+    fusion:
+      # 混合检索（RRF 融合向量+关键词）：默认开启，关闭时回退到纯向量检索。
+      # RRF 只依赖每路排名不依赖绝对分，绕开向量(cosine)与关键词(加权分)量纲不同的问题。
+      enabled: ${RAG_FUSION_ENABLED:true}
+      k: ${RRF_K:60}
+      topK: ${RRF_TOPK:5}
   eval:
     judge:
       # LLM-as-judge 质量评测：默认关闭，开启后 EvalRunner 对根因输出打 1-5 分。
