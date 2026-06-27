@@ -9,6 +9,7 @@ import com.gcll.ticketagent.resilience.ExternalCallGateway;
 import com.gcll.ticketagent.tool.ToolGateway;
 import com.gcll.ticketagent.tool.ToolRegistry;
 import com.gcll.ticketagent.tool.ToolResult;
+import com.gcll.ticketagent.tool.react.ToolArgMerger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -24,15 +25,18 @@ public class EvidenceCollectionService {
     private final ToolRegistry toolRegistry;
     private final ToolExecutionLogRepository toolExecutionLogRepository;
     private final ExternalCallGateway externalCallGateway;
+    private final ToolArgMerger toolArgMerger;
 
     public EvidenceCollectionService(
             ToolRegistry toolRegistry,
             ToolExecutionLogRepository toolExecutionLogRepository,
-            ExternalCallGateway externalCallGateway
+            ExternalCallGateway externalCallGateway,
+            ToolArgMerger toolArgMerger
     ) {
         this.toolRegistry = toolRegistry;
         this.toolExecutionLogRepository = toolExecutionLogRepository;
         this.externalCallGateway = externalCallGateway;
+        this.toolArgMerger = toolArgMerger;
     }
 
     public List<ToolResult> collect(
@@ -68,10 +72,12 @@ public class EvidenceCollectionService {
                 continue;
             }
             // 工具调用经 ExternalCallGateway 治理（tool-default：默认不重试，因工具有副作用）。
+            // 阶段B：合并 LLM 工具选择时生成的参数到 extract（覆盖 system/module），再执行。
             // 超时/熔断/异常统一由 Gateway 处理；成功用 tool 自带的 ToolResult，失败降级为 failure。
+            TicketExtractResult mergedExtract = toolArgMerger.merge(extract, selection.parameters());
             CallResult<ToolResult> callResult = externalCallGateway.execute(
                     mapCallName(tool.toolName()),
-                    () -> tool.execute(extract, sanitizedContent)
+                    () -> tool.execute(mergedExtract, sanitizedContent)
             );
             ToolResult result;
             if (callResult.success()) {

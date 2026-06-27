@@ -10,6 +10,7 @@ import com.gcll.ticketagent.resilience.ExternalCallGateway;
 import com.gcll.ticketagent.tool.ToolGateway;
 import com.gcll.ticketagent.tool.ToolRegistry;
 import com.gcll.ticketagent.tool.ToolResult;
+import com.gcll.ticketagent.tool.react.ToolArgMerger;
 import com.gcll.ticketagent.tool.ToolType;
 import io.github.resilience4j.circuitbreaker.CircuitBreakerRegistry;
 import io.github.resilience4j.retry.RetryRegistry;
@@ -60,7 +61,7 @@ class EvidenceCollectionServiceTest {
         );
 
         ToolRegistry registry = new ToolRegistry(List.of(tool1, tool2));
-        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository, plainGateway());
+        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository, plainGateway(), new ToolArgMerger());
 
         TicketExtractResult extract = sampleExtract();
         ToolSelection selection = new ToolSelection(List.of("query_logs"), java.util.Map.of(), "test", false);
@@ -83,7 +84,7 @@ class EvidenceCollectionServiceTest {
         );
 
         ToolRegistry registry = new ToolRegistry(List.of(failingTool));
-        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository, plainGateway());
+        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository, plainGateway(), new ToolArgMerger());
 
         List<ToolResult> results = service.collect(
                 "run-002",
@@ -100,7 +101,7 @@ class EvidenceCollectionServiceTest {
     @Test
     void returnsEmptyWhenNoToolsSelected() {
         ToolRegistry registry = new ToolRegistry(List.of());
-        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository, plainGateway());
+        EvidenceCollectionService service = new EvidenceCollectionService(registry, logRepository, plainGateway(), new ToolArgMerger());
 
         List<ToolResult> results = service.collect(
                 "run-003",
