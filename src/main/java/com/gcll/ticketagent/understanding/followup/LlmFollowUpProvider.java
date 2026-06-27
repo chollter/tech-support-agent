@@ -34,12 +34,14 @@ public class LlmFollowUpProvider {
             TicketExtractResult extract,
             List<String> templateQuestions,
             List<String> semanticGaps,
-            List<String> gapSuggestedQuestions
+            List<String> gapSuggestedQuestions,
+            String runId
     ) {
         try {
             String input = buildInput(userContent, extract, templateQuestions, semanticGaps, gapSuggestedQuestions);
+            // runId 非 null → 走记忆路径（多轮追问复用上下文）；null → 退回单轮
             CallResult<LlmResponse> result = llmCallExecutor.execute(
-                    "llm.follow-up", "follow-up-generate.txt", input);
+                    "llm.follow-up", "follow-up-generate.txt", input, runId);
             if (!result.success()) {
                 return List.of();
             }

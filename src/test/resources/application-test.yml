@@ -6,6 +6,13 @@ spring:
     username: sa
     password:
     driver-class-name: org.h2.Driver
+  # 测试用独立 Redis db=15，与真实应用 db0 隔离，避免测试间/与应用间幂等键互相污染。
+  # （@SpringBootTest 跑工单会写 idempotency:* 键，共用 db0 会导致后续测试命中残留 → Agent run not found）
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      database: 15
   sql:
     init:
       mode: always

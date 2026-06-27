@@ -22,7 +22,7 @@ public class CompletenessDecisionService {
         this.followUpQuestionService = followUpQuestionService;
     }
 
-    public CompletenessDecision decide(String userContent, TicketExtractResult extract, InfoGapAnalysis gap) {
+    public CompletenessDecision decide(String userContent, TicketExtractResult extract, InfoGapAnalysis gap, String runId) {
         SchemaCompletenessResult schema = schemaCompletenessChecker.check(extract);
         // 始终用可变 ArrayList：后续要把 gap.schemaMissing 合并进来（add），
         // 用 List.of()（不可变）会在 add 时抛 UnsupportedOperationException。
@@ -50,7 +50,8 @@ public class CompletenessDecisionService {
                 extract,
                 missingSchema,
                 semanticGaps,
-                gap.suggestedQuestions()
+                gap.suggestedQuestions(),
+                runId
         )
                 : List.of();
 

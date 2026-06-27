@@ -29,7 +29,8 @@ public class FollowUpQuestionService {
             TicketExtractResult extract,
             List<String> missingSchemaFields,
             List<String> semanticGaps,
-            List<String> gapSuggestedQuestions
+            List<String> gapSuggestedQuestions,
+            String runId
     ) {
         List<String> templateQuestions = templateFollowUpProvider.questionsForMissingFields(missingSchemaFields);
         List<String> llmQuestions = llmFollowUpProvider.generate(
@@ -37,7 +38,8 @@ public class FollowUpQuestionService {
                 extract,
                 templateQuestions,
                 semanticGaps,
-                gapSuggestedQuestions
+                gapSuggestedQuestions,
+                runId
         );
 
         LinkedHashSet<String> merged = new LinkedHashSet<>();

@@ -103,7 +103,7 @@ public class AgentRuntime {
                 gapOutcome.llmUsed() ? "SpringAI" : null, gapCostMs, null);
 
         start = System.currentTimeMillis();
-        CompletenessDecision decision = completenessDecisionService.decide(draft.fullContent(), extract, gap);
+        CompletenessDecision decision = completenessDecisionService.decide(draft.fullContent(), extract, gap, run.getId());
         auditLogService.recordStep(run, AgentStepName.COMPLETENESS_DECISION, summaryFormatter.summarizeGap(gap),
                 "canProceed=" + decision.canProceed() + ",reason=" + decision.decisionReason()
                         + ",missing=" + decision.missingSchemaFields()

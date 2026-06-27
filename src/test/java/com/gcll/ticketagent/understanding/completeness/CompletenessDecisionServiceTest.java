@@ -52,7 +52,7 @@ class CompletenessDecisionServiceTest {
         );
         var gap = infoGapAnalysisService.analyze("接口报错了", extract).value();
 
-        CompletenessDecision decision = service.decide("接口报错了", extract, gap);
+        CompletenessDecision decision = service.decide("接口报错了", extract, gap, null);
 
         assertThat(decision.needFollowUp()).isTrue();
         assertThat(decision.canProceed()).isFalse();
@@ -70,7 +70,7 @@ class CompletenessDecisionServiceTest {
         );
         var gap = infoGapAnalysisService.analyze("生产支付回调500", extract).value();
 
-        CompletenessDecision decision = service.decide("生产支付回调500", extract, gap);
+        CompletenessDecision decision = service.decide("生产支付回调500", extract, gap, null);
 
         assertThat(decision.canProceed()).isTrue();
         assertThat(decision.needFollowUp()).isFalse();
@@ -86,7 +86,7 @@ class CompletenessDecisionServiceTest {
         );
         var gap = infoGapAnalysisService.analyze("结算批处理有时跑不完", extract).value();
 
-        CompletenessDecision decision = service.decide("结算批处理有时跑不完", extract, gap);
+        CompletenessDecision decision = service.decide("结算批处理有时跑不完", extract, gap, null);
 
         assertThat(gap.semanticGaps()).isNotEmpty();
         assertThat(decision.needFollowUp()).isTrue();

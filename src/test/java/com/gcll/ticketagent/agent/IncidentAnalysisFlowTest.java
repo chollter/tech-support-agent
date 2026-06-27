@@ -18,9 +18,8 @@ import org.springframework.test.context.ActiveProfiles;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-@SpringBootTest
 @ActiveProfiles("test")
-class IncidentAnalysisFlowTest {
+class IncidentAnalysisFlowTest extends com.gcll.ticketagent.testsupport.RedisIsolatedTest {
 
     @Autowired
     private TicketApplicationService ticketApplicationService;

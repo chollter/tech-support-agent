@@ -37,14 +37,29 @@ public class LlmCallExecutor {
      * @return 治理后的调用结果；LlmGateway 不可用（无 ChatClient.Builder）时返回失败结果，调用方走降级
      */
     public CallResult<LlmResponse> execute(String callName, String promptFile, String userContent) {
+        return execute(callName, promptFile, userContent, null);
+    }
+
+    /**
+     * 带 runId 的治理调用（阶段A 接入记忆路径）。
+     *
+     * <p>runId 非 null 时走 {@link LlmGateway#invoke(String, String, String, String)} 4参新路径：
+     * 按 callName 路由模型 + 以 runId 为 conversationId 启用记忆（经 SummarizingChatMemoryAdvisor）。
+     * runId 为 null 时退回 2参老路径（无记忆），保持向后兼容。
+     *
+     * @param runId 工单运行 ID，作为记忆 conversationId；null 表示单轮（不挂记忆）
+     */
+    public CallResult<LlmResponse> execute(String callName, String promptFile, String userContent, String runId) {
         LlmGateway llmGateway = llmGatewayProvider.getIfAvailable();
         if (llmGateway == null) {
             return CallResult.fail(
                     new NonRetryableCallException("LlmGateway bean not available (no ChatClient.Builder)"),
                     0, 0L);
         }
-        CallResult<LlmResponse> result = gateway.execute(
-                callName, () -> llmGateway.invoke(promptFile, userContent));
+        // runId 决定走记忆路径（4参）还是单轮路径（2参）
+        CallResult<LlmResponse> result = runId != null
+                ? gateway.execute(callName, () -> llmGateway.invoke(callName, promptFile, userContent, runId))
+                : gateway.execute(callName, () -> llmGateway.invoke(promptFile, userContent));
         if (result.success()) {
             LlmResponse response = result.value();
             // 阶段4：按 callName + model 分维埋点，多模型路由后能定位"哪个调用费 token、用的哪个模型"

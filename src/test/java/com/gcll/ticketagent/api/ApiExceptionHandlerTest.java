@@ -16,10 +16,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-@SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-class ApiExceptionHandlerTest {
+class ApiExceptionHandlerTest extends com.gcll.ticketagent.testsupport.RedisIsolatedTest {
 
     @Autowired
     private MockMvc mockMvc;

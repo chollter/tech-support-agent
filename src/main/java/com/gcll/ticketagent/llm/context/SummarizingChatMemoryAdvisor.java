@@ -88,8 +88,8 @@ public class SummarizingChatMemoryAdvisor extends AbstractChatMemoryAdvisor<Chat
             return chain.nextAroundCall(request);
         }
 
-        // 1. 读历史 + 摘要管理（lastN=MAX_VALUE 取全部历史，由 manageHistory 负责窗口管理）
-        List<Message> history = getChatMemoryStore().get(conversationId, Integer.MAX_VALUE);
+        // 1. 读历史（用反射兼容 M6/GA 两种 ChatMemory.get 签名——见 readHistory 注释）
+        List<Message> history = readHistory(getChatMemoryStore(), conversationId);
         AdvisedRequest advisedRequest = request;
         if (history != null && !history.isEmpty()) {
             List<Message> managed = manageHistory(conversationId, history);
@@ -208,6 +208,36 @@ public class SummarizingChatMemoryAdvisor extends AbstractChatMemoryAdvisor<Chat
     }
 
     // ---- 辅助 ----
+
+    /**
+     * 反射读取对话历史，兼容 M6/GA 两种 ChatMemory.get 签名。
+     *
+     * <p>背景:项目 classpath 同时有 spring-ai-core 1.0.0-M6（ChatMemory.get(String,int)）
+     * 和 spring-ai-model 1.0.0 GA（ChatMemory.get(String)），二者同名接口冲突。
+     * MessageWindowChatMemory 是 GA 实现（只有单参 get），但编译期 ChatMemory 接口解析为
+     * M6（双参 get），运行时双参调用会抛 AbstractMethodError。
+     *
+     * <p>解法:用反射按实际实例的方法签名调用——优先单参 get(String)（GA），
+     * 退化双参 get(String,int)（M6）。这样无论运行时加载哪个版本的接口都能工作。
+     */
+    @SuppressWarnings("unchecked")
+    private List<Message> readHistory(ChatMemory memory, String conversationId) {
+        try {
+            // 优先 GA 单参签名 get(String)
+            try {
+                java.lang.reflect.Method m = memory.getClass().getMethod("get", String.class);
+                return (List<Message>) m.invoke(memory, conversationId);
+            } catch (NoSuchMethodException gaMiss) {
+                // 退化 M6 双参签名 get(String, int)
+                java.lang.reflect.Method m = memory.getClass().getMethod("get", String.class, int.class);
+                return (List<Message>) m.invoke(memory, conversationId, Integer.MAX_VALUE);
+            }
+        } catch (Exception ex) {
+            log.warn("readHistory via reflection failed, treat as empty: conversationId={}, error={}",
+                    conversationId, ex.getMessage());
+            return List.of();
+        }
+    }
 
     private long estimateTokens(List<Message> messages) {
         long total = 0;
