@@ -14,6 +14,13 @@ spring:
   ai:
     dashscope:
       api-key: test-key
+    chat:
+      memory:
+        repository:
+          jdbc:
+            # 测试用 H2，但 Spring AI ChatMemory 的 JDBC starter 没带 schema-h2.sql，
+            # 关掉自动建表避免启动失败。测试不依赖 ChatMemory 持久化（单测走 mock）。
+            initialize-schema: never
 
 opsmind:
   redisson:

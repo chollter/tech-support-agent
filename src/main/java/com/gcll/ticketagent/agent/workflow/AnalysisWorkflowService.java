@@ -7,6 +7,8 @@ import com.gcll.ticketagent.agent.AgentStepName;
 import com.gcll.ticketagent.agent.planner.AgentAction;
 import com.gcll.ticketagent.agent.planner.AgentPlan;
 import com.gcll.ticketagent.agent.planner.AgentPlanner;
+import com.gcll.ticketagent.agent.planner.ExecutionPlan;
+import com.gcll.ticketagent.agent.planner.PlanExecutePlanner;
 import com.gcll.ticketagent.analysis.RootCauseAnalysisService;
 import com.gcll.ticketagent.analysis.RootCauseResult;
 import com.gcll.ticketagent.api.dto.AgentRunResponse;
@@ -73,6 +75,10 @@ public class AnalysisWorkflowService {
     private final AgentRunContextPersister contextPersister;
     private final AgentResponseAssembler responseAssembler;
     private final AgentAuditSummaryFormatter summaryFormatter;
+    /** 阶段2：可选的根因策略 bean。react 模式开启时存在（ReactRootCauseStrategy），否则 empty 走线性。 */
+    private final java.util.Optional<RootCauseStrategy> rootCauseStrategy;
+    /** 阶段3：可选的 Plan-Execute 规划器。plan-execute 模式开启时存在，否则 empty 走原 SpringAiAgentPlanner。 */
+    private final java.util.Optional<PlanExecutePlanner> planExecutePlanner;
 
     public AnalysisWorkflowService(
             AgentPlanner agentPlanner,
@@ -94,7 +100,9 @@ public class AnalysisWorkflowService {
             TransactionTemplate transactionTemplate,
             AgentRunContextPersister contextPersister,
             AgentResponseAssembler responseAssembler,
-            AgentAuditSummaryFormatter summaryFormatter
+            AgentAuditSummaryFormatter summaryFormatter,
+            org.springframework.beans.factory.ObjectProvider<RootCauseStrategy> rootCauseStrategyProvider,
+            org.springframework.beans.factory.ObjectProvider<PlanExecutePlanner> planExecutePlannerProvider
     ) {
         this.agentPlanner = agentPlanner;
         this.toolSelector = toolSelector;
@@ -116,6 +124,10 @@ public class AnalysisWorkflowService {
         this.contextPersister = contextPersister;
         this.responseAssembler = responseAssembler;
         this.summaryFormatter = summaryFormatter;
+        // 阶段2：ObjectProvider 延迟解析，避免无策略 bean（linear 模式）时启动失败
+        this.rootCauseStrategy = java.util.Optional.ofNullable(rootCauseStrategyProvider.getIfAvailable());
+        // 阶段3：同上，plan-execute 模式未开启时为 empty
+        this.planExecutePlanner = java.util.Optional.ofNullable(planExecutePlannerProvider.getIfAvailable());
     }
 
     public AgentRunResponse execute(
@@ -126,11 +138,7 @@ public class AnalysisWorkflowService {
             boolean extractLlmUsed
     ) {
         long start = System.currentTimeMillis();
-        StepOutcome<AgentPlan> planOutcome = agentPlanner.plan(draft.fullContent(), extract);
-        AgentPlan plan = planOutcome.value();
-        long planCostMs = planOutcome.costMs() > 0 ? planOutcome.costMs() : System.currentTimeMillis() - start;
-        auditLogService.recordStep(run, AgentStepName.AGENT_PLAN, summaryFormatter.summarizeExtract(extract),
-                plan.auditSummary(), planOutcome.llmUsed(), planOutcome.llmUsed() ? "SpringAI" : null, planCostMs, null);
+        AgentPlan plan = resolvePlan(run, draft, extract);
 
         List<KnowledgeHit> hits = searchKnowledgeIfNeeded(run, draft, extract, plan);
 
@@ -148,10 +156,7 @@ public class AnalysisWorkflowService {
                 evidenceSummary, false, null, System.currentTimeMillis() - start, null);
 
         start = System.currentTimeMillis();
-        RootCauseResult rootCause = rootCauseAnalysisService.analyze(extract, hits, toolResults);
-        auditLogService.recordStep(run, AgentStepName.ROOT_CAUSE_ANALYSIS, evidenceSummary,
-                rootCause.hypothesis(), rootCause.llmUsed(), rootCause.llmUsed() ? "SpringAI" : null,
-                System.currentTimeMillis() - start, null);
+        RootCauseResult rootCause = resolveRootCause(run, draft, extract, hits, evidenceSummary, toolResults);
 
         start = System.currentTimeMillis();
         PriorityResult priority = priorityEvaluationService.evaluate(extract);
@@ -194,6 +199,99 @@ public class AnalysisWorkflowService {
         AgentRunResponse response = responseAssembler.analysisResult(run.getId(), analysis, needConfirm, aiGenerated);
         completeRun(run, gap, plan, selection, analysis, needConfirm, confirmReason, routing);
         return response;
+    }
+
+    /**
+     * 阶段2：根因解析，支持 ReAct 策略（LLM 自主调工具）与线性（原单次推理）两种。
+     *
+     * <p>react 模式（配置开启时 RootCauseStrategy bean 存在）：调策略拿根因，ReAct 循环内
+     * LLM 自主调工具迭代推理；失败回退线性根因（兜底）。
+     * <p>linear 模式（默认，无策略 bean）：原逻辑 rootCauseAnalysisService.analyze。
+     *
+     * <p>无论哪条路径，都返回 {@link RootCauseResult}（统一类型），后半段 priority/routing/suggestion
+     * 完全无感知根因来源——这是最小侵入式接入。
+     */
+    /**
+     * 阶段3：规划解析，支持 Plan-Execute（有序步骤）与原 planner（无序动作集合）。
+     *
+     * <p>plan-execute 模式（配置开启时 PlanExecutePlanner bean 存在）：调规划器出有序
+     * ExecutionPlan，序列化持久化（断点续跑），再转成 AgentPlan 喂后续（knowledge/tool 仍用
+     * AgentPlan.includes 判断，最小侵入）。失败回退原 planner。
+     * <p>default 模式：原 SpringAiAgentPlanner，行为不变。
+     */
+    private AgentPlan resolvePlan(AgentRun run, TicketDraft draft, TicketExtractResult extract) {
+        long start = System.currentTimeMillis();
+        if (planExecutePlanner.isEmpty()) {
+            // 默认：原 planner
+            StepOutcome<AgentPlan> outcome = agentPlanner.plan(draft.fullContent(), extract);
+            AgentPlan plan = outcome.value();
+            long costMs = outcome.costMs() > 0 ? outcome.costMs() : System.currentTimeMillis() - start;
+            auditLogService.recordStep(run, AgentStepName.AGENT_PLAN, summaryFormatter.summarizeExtract(extract),
+                    plan.auditSummary(), outcome.llmUsed(), outcome.llmUsed() ? "SpringAI" : null, costMs, null);
+            return plan;
+        }
+        // Plan-Execute 路径
+        PlanExecutePlanner planner = planExecutePlanner.get();
+        try {
+            ExecutionPlan execPlan = planner.plan(run.getId(), draft.fullContent(), extract);
+            // 持久化有序计划（断点续跑用）
+            contextPersister.persistExecutionPlan(run, execPlan);
+            AgentPlan plan = execPlan.toAgentPlan();
+            String auditOut = "plan-execute steps=" + execPlan.getSteps().size()
+                    + ", rationale=" + execPlan.getRationale();
+            auditLogService.recordStep(run, AgentStepName.AGENT_PLAN, summaryFormatter.summarizeExtract(extract),
+                    auditOut, execPlan.isLlmPlanned(), execPlan.isLlmPlanned() ? "PlanExecute" : null,
+                    System.currentTimeMillis() - start, null);
+            return plan;
+        } catch (Exception ex) {
+            // 回退原 planner
+            log.warn("Plan-Execute failed, fallback to SpringAiAgentPlanner, runId={}: {}",
+                    run.getId(), ex.getMessage());
+            StepOutcome<AgentPlan> outcome = agentPlanner.plan(draft.fullContent(), extract);
+            AgentPlan plan = outcome.value();
+            auditLogService.recordStep(run, AgentStepName.AGENT_PLAN,
+                    summaryFormatter.summarizeExtract(extract) + "(fallback-from-plan-execute)",
+                    plan.auditSummary(), outcome.llmUsed(), outcome.llmUsed() ? "SpringAI" : null,
+                    System.currentTimeMillis() - start, null);
+            return plan;
+        }
+    }
+
+    private RootCauseResult resolveRootCause(
+            AgentRun run, TicketDraft draft, TicketExtractResult extract,
+            List<KnowledgeHit> hits, String evidenceSummary, List<ToolResult> toolResults) {
+        if (rootCauseStrategy.isEmpty()) {
+            // 默认线性路径
+            long start = System.currentTimeMillis();
+            RootCauseResult rc = rootCauseAnalysisService.analyze(extract, hits, toolResults);
+            auditLogService.recordStep(run, AgentStepName.ROOT_CAUSE_ANALYSIS, evidenceSummary,
+                    rc.hypothesis(), rc.llmUsed(), rc.llmUsed() ? "SpringAI" : null,
+                    System.currentTimeMillis() - start, null);
+            return rc;
+        }
+        // ReAct 路径：调策略，失败回退线性
+        RootCauseStrategy strategy = rootCauseStrategy.get();
+        try {
+            long start = System.currentTimeMillis();
+            RootCauseStrategy.RootCauseOutcome outcome = strategy.analyze(
+                    run.getId(), extract, draft.fullContent());
+            auditLogService.recordStep(run, AgentStepName.ROOT_CAUSE_ANALYSIS,
+                    strategy.strategyName() + "-strategy", outcome.hypothesis(),
+                    outcome.llmUsed(), outcome.llmUsed() ? strategy.strategyName() : null,
+                    outcome.durationMs(), null);
+            return new RootCauseResult(outcome.hypothesis(), outcome.evidence(),
+                    outcome.unknowns(), outcome.confidence(), outcome.llmUsed());
+        } catch (Exception ex) {
+            log.warn("Root cause strategy [{}] failed, fallback to linear, runId={}: {}",
+                    strategy.strategyName(), run.getId(), ex.getMessage());
+            long start = System.currentTimeMillis();
+            RootCauseResult rc = rootCauseAnalysisService.analyze(extract, hits, toolResults);
+            auditLogService.recordStep(run, AgentStepName.ROOT_CAUSE_ANALYSIS,
+                    evidenceSummary + "(fallback-from-" + strategy.strategyName() + ")",
+                    rc.hypothesis(), rc.llmUsed(), rc.llmUsed() ? "SpringAI" : null,
+                    System.currentTimeMillis() - start, null);
+            return rc;
+        }
     }
 
     private List<KnowledgeHit> searchKnowledgeIfNeeded(

@@ -34,7 +34,7 @@ class DashScopeEvalJudgeTest {
     @Test
     void scoresValidJsonOutput() {
         when(executor.execute(anyString(), anyString(), anyString()))
-                .thenReturn(CallResult.ok(new LlmResponse("{\"score\":4,\"reason\":\"准确识别OOM\"}", 10, 20), 1, 100));
+                .thenReturn(CallResult.ok(LlmResponse.of("{\"score\":4,\"reason\":\"准确识别OOM\"}", 10, 20), 1, 100));
 
         EvalQualityScore score = judge.score(sampleCase(null), "根因是堆内存泄漏导致OOM");
 
@@ -47,7 +47,7 @@ class DashScopeEvalJudgeTest {
     @Test
     void usesCaseSpecificRubricWhenPresent() {
         when(executor.execute(anyString(), anyString(), anyString()))
-                .thenReturn(CallResult.ok(new LlmResponse("{\"score\":5,\"reason\":\"ok\"}", 10, 20), 1, 100));
+                .thenReturn(CallResult.ok(LlmResponse.of("{\"score\":5,\"reason\":\"ok\"}", 10, 20), 1, 100));
 
         judge.score(sampleCase("应识别为内存泄漏"), "内存泄漏");
 
@@ -59,7 +59,7 @@ class DashScopeEvalJudgeTest {
     @Test
     void usesDefaultRubricWhenCaseRubricNull() {
         when(executor.execute(anyString(), anyString(), anyString()))
-                .thenReturn(CallResult.ok(new LlmResponse("{\"score\":3,\"reason\":\"ok\"}", 10, 20), 1, 100));
+                .thenReturn(CallResult.ok(LlmResponse.of("{\"score\":3,\"reason\":\"ok\"}", 10, 20), 1, 100));
 
         judge.score(sampleCase(null), "some root cause");
 
@@ -71,7 +71,7 @@ class DashScopeEvalJudgeTest {
     @Test
     void clampsScoreToValidRange() {
         when(executor.execute(anyString(), anyString(), anyString()))
-                .thenReturn(CallResult.ok(new LlmResponse("{\"score\":9,\"reason\":\"偏高\"}", 10, 20), 1, 100));
+                .thenReturn(CallResult.ok(LlmResponse.of("{\"score\":9,\"reason\":\"偏高\"}", 10, 20), 1, 100));
 
         EvalQualityScore score = judge.score(sampleCase(null), "root cause");
         assertThat(score.score()).isEqualTo(5);
@@ -98,7 +98,7 @@ class DashScopeEvalJudgeTest {
     @Test
     void returnsNullWhenParseFails() {
         when(executor.execute(anyString(), anyString(), anyString()))
-                .thenReturn(CallResult.ok(new LlmResponse("not json at all", 10, 20), 1, 100));
+                .thenReturn(CallResult.ok(LlmResponse.of("not json at all", 10, 20), 1, 100));
 
         EvalQualityScore score = judge.score(sampleCase(null), "root cause");
         assertThat(score).isNull();
@@ -107,7 +107,7 @@ class DashScopeEvalJudgeTest {
     @Test
     void stripsCodeFenceBeforeParsing() {
         when(executor.execute(anyString(), anyString(), anyString()))
-                .thenReturn(CallResult.ok(new LlmResponse("```json\n{\"score\":2,\"reason\":\"fenced\"}\n```", 10, 20), 1, 100));
+                .thenReturn(CallResult.ok(LlmResponse.of("```json\n{\"score\":2,\"reason\":\"fenced\"}\n```", 10, 20), 1, 100));
 
         EvalQualityScore score = judge.score(sampleCase(null), "root cause");
         assertThat(score).isNotNull();

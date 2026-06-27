@@ -1,5 +1,7 @@
 package com.gcll.ticketagent.llm;
 
+import com.gcll.ticketagent.llm.context.ContextWindowManager;
+import com.gcll.ticketagent.llm.routing.ModelRouter;
 import com.gcll.ticketagent.resilience.RetryableCallException;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -10,6 +12,7 @@ import org.springframework.ai.chat.client.ChatClient;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
@@ -26,13 +29,19 @@ class LlmGatewayRetryTest {
     private ChatClient.Builder chatClientBuilder;
     @Mock
     private ChatClient.ChatClientRequestSpec requestSpec;
+    @Mock
+    private ModelRouter modelRouter;
+    @Mock
+    private ContextWindowManager contextWindowManager;
 
     private LlmGateway llmGateway;
 
     @BeforeEach
     void setUp() throws Exception {
         when(chatClientBuilder.build()).thenReturn(chatClient);
-        llmGateway = new LlmGateway(chatClientBuilder);
+        // 阶段1/4：构造器新增 ModelRouter + ContextWindowManager 依赖；truncate 透传不截断
+        lenient().when(contextWindowManager.truncate(anyString())).thenAnswer(inv -> inv.getArgument(0));
+        llmGateway = new LlmGateway(chatClientBuilder, modelRouter, contextWindowManager);
     }
 
     @Test

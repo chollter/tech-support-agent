@@ -47,7 +47,8 @@ public class LlmCallExecutor {
                 callName, () -> llmGateway.invoke(promptFile, userContent));
         if (result.success()) {
             LlmResponse response = result.value();
-            metrics.recordTokenUsage(callName, response.promptTokens(), response.completionTokens());
+            // 阶段4：按 callName + model 分维埋点，多模型路由后能定位"哪个调用费 token、用的哪个模型"
+            metrics.recordTokenUsage(callName, response.model(), response.promptTokens(), response.completionTokens());
         }
         return result;
     }

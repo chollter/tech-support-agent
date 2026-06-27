@@ -49,11 +49,23 @@ public class CallMetrics {
     }
 
     public void recordTokenUsage(String callName, int promptTokens, int completionTokens) {
+        recordTokenUsage(callName, "unknown", promptTokens, completionTokens);
+    }
+
+    /**
+     * 阶段4：token 用量按 callName + model 分维记录。
+     * 多模型路由后，需能定位"哪个 callName 费 token、用的哪个模型"，支撑成本分析。
+     *
+     * @param callName 调用点标识
+     * @param model    实际使用的模型名（qwen-turbo/plus 等）
+     */
+    public void recordTokenUsage(String callName, String model, int promptTokens, int completionTokens) {
+        String safeModel = model == null ? "unknown" : model;
         DistributionSummary.builder("ai_token_usage")
-                .tag("callName", callName).tag("type", "prompt")
+                .tag("callName", callName).tag("type", "prompt").tag("model", safeModel)
                 .register(registry).record(promptTokens);
         DistributionSummary.builder("ai_token_usage")
-                .tag("callName", callName).tag("type", "completion")
+                .tag("callName", callName).tag("type", "completion").tag("model", safeModel)
                 .register(registry).record(completionTokens);
     }
 }

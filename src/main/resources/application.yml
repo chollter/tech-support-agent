@@ -82,6 +82,45 @@ knowledge:
     timeout-ms: ${KNOWLEDGE_SEARCH_TIMEOUT_MS:5000}
 
 opsmind:
+  agent:
+    # 阶段2：根因分析策略。linear=原线性流水线(默认)，react=LLM 自主调工具迭代推理。
+    # react 模式下 ReactRootCauseStrategy bean 激活，失败自动回退 linear（见 AnalysisWorkflowService.resolveRootCause）。
+    root-cause-strategy: ${ROOT_CAUSE_STRATEGY:linear}
+    # 阶段3：规划策略。default=现有 SpringAiAgentPlanner(无序动作集合)，plan-execute=有序步骤+每步目标。
+    # plan-execute 模式下 PlanExecutePlanner bean 激活，失败回退 SpringAiAgentPlanner。
+    # 与 react(根因)互不冲突：plan-execute 管"怎么规划调查步骤"，react 管"根因怎么推理"。
+    planner-strategy: ${PLANNER_STRATEGY:default}
+  llm:
+    routing:
+      # 兜底模型：callName 未命中任何前缀时用。沿用 qwen-plus 保证不配也能跑。
+      default-model: ${LLM_DEFAULT_MODEL:qwen-plus}
+      # 多模型路由：简单环节用 qwen-turbo（快+省 token），复杂环节用 qwen-plus（保效果）。
+      # 前缀匹配（以 .* 结尾）+ 精确匹配，由 ModelRouter.resolveModel 解析。
+      mappings:
+        llm.ticket-extract: ${MODEL_EXTRACT:qwen-turbo}      # 抽取：结构化任务，简单
+        llm.info-gap:       ${MODEL_GAP:qwen-turbo}          # 缺口：结构化任务，简单
+        llm.tool-select:    ${MODEL_TOOL_SELECT:qwen-turbo}  # 工具选择：从白名单选，简单
+        llm.follow-up:      ${MODEL_FOLLOWUP:qwen-turbo}     # 追问：生成问题，简单
+        llm.agent-plan:     ${MODEL_PLAN:qwen-plus}          # 规划：需要推理，中等
+        llm.root-cause:     ${MODEL_ROOT_CAUSE:qwen-plus}    # 根因：复杂推理，用强模型
+        llm.routing-suggest: ${MODEL_ROUTING:qwen-plus}       # 路由建议：需要推理
+        llm.suggestion:     ${MODEL_SUGGESTION:qwen-plus}    # 处置建议：需要推理
+        llm.context-summarize: ${MODEL_SUMMARIZE:qwen-turbo} # 历史摘要：简单压缩，用快模型省钱      chat-memory:
+        # 工单级短期记忆：按 runId 隔离各工单对话历史，多轮追问复用上下文而非重跑。
+        # 关闭时退化为单轮（现状）。出问题可一键关闭回退。
+        enabled: ${CHAT_MEMORY_ENABLED:true}
+        # 每个工单保留最近 N 条消息（防 context 膨胀）。
+        history-size: ${CHAT_MEMORY_HISTORY_SIZE:10}
+        # 阶段 A：摘要式长上下文管理。开启时用 SummarizingChatMemoryAdvisor，
+        # 历史 token 超阈值则 LLM 摘要旧消息（保留最近 keep-recent 条原文），而非简单裁剪。
+        # 关闭 summarize 则退化为按条数裁剪（原 MessageChatMemoryAdvisor 行为）。
+        summarize: ${CHAT_MEMORY_SUMMARIZE:true}
+        # 目标模型上下文窗口（token）。qwen-plus 窗口 32k，默认 28000 留 12% 安全垫。
+        context-window-tokens: ${CHAT_MEMORY_CONTEXT_WINDOW_TOKENS:28000}
+        # 触发摘要的阈值比例。默认 0.65，留 35% 余量吸收 jtokkit 对 qwen 的 10-20% 误差。
+        summarize-threshold-ratio: ${CHAT_MEMORY_SUMMARIZE_THRESHOLD:0.65}
+        # 摘要时保留最近多少条原文（不摘要），兼顾近期精度与历史连续性。
+        keep-recent-messages: ${CHAT_MEMORY_KEEP_RECENT:6}
   async:
     enabled: ${OPSMIND_ASYNC_ENABLED:false}
     topic: ${OPSMIND_RUN_TOPIC:opsmind.agent-run.execute}

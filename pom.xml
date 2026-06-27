@@ -92,6 +92,13 @@
             <groupId>org.springframework.ai</groupId>
             <artifactId>spring-ai-starter-mcp-client</artifactId>
         </dependency>
+        <!-- ChatMemory：工单级短期记忆。JDBC repository 把对话历史存 PG，
+             MessageChatMemoryAdvisor 按 conversationId(runId) 隔离各工单上下文。
+             阶段1 用 InMemory 先跑通，JDBC 作为生产可持久化的备选 repository。 -->
+        <dependency>
+            <groupId>org.springframework.ai</groupId>
+            <artifactId>spring-ai-starter-model-chat-memory-repository-jdbc</artifactId>
+        </dependency>
         <dependency>
             <groupId>org.postgresql</groupId>
             <artifactId>postgresql</artifactId>

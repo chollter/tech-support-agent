@@ -1,5 +1,7 @@
 package com.gcll.ticketagent.llm;
 
+import com.gcll.ticketagent.llm.context.ContextWindowManager;
+import com.gcll.ticketagent.llm.routing.ModelRouter;
 import com.gcll.ticketagent.resilience.LlmResponse;
 import com.gcll.ticketagent.resilience.NonRetryableCallException;
 import com.gcll.ticketagent.resilience.RetryableCallException;
@@ -27,6 +29,17 @@ import java.nio.charset.StandardCharsets;
  *   <li>{@link NonRetryableCallException}：prompt 文件加载失败等确定性错误，不重试</li>
  *   <li>{@link RetryableCallException}：其他异常（网络抖动 / 5xx / 超时等），默认可重试</li>
  * </ul>
+ *
+ * <h3>双调用路径（阶段1 多模型路由 + 记忆）</h3>
+ * <ul>
+ *   <li><b>老路径 {@link #invoke(String, String)}</b>：单 ChatClient、无记忆、单轮。保留不动，
+ *       供尚未迁移的调用方使用，保证编译通过。</li>
+ *   <li><b>新路径 {@link #invoke(String, String, String, String)}</b>：按 callName 经
+ *       {@link ModelRouter} 路由到对应模型，按 runId 设 conversationId 隔离工单记忆。
+ *       迁移完成的调用方用这条。</li>
+ * </ul>
+ * <p>两条路径并存，逐步把调用方从老路径迁到新路径。迁移期间功能等价（新路径不挂 advisor 时
+ * 与老路径行为一致）。
  */
 @Service
 @ConditionalOnBean(ChatClient.Builder.class)
@@ -34,35 +47,75 @@ public class LlmGateway {
 
     private static final Logger log = LoggerFactory.getLogger(LlmGateway.class);
 
+    /** conversationId 作为 advisor 参数的 key（MessageChatMemoryAdvisor 约定）。 */
+    private static final String MEMORY_CONVERSATION_ID_KEY = "chat_memory_conversation_id";
+
     private final ChatClient chatClient;
     private final String systemBasePrompt;
+    private final ModelRouter modelRouter;
+    private final ContextWindowManager contextWindowManager;
 
-    public LlmGateway(ChatClient.Builder chatClientBuilder) throws IOException {
+    public LlmGateway(ChatClient.Builder chatClientBuilder,
+                      ModelRouter modelRouter,
+                      ContextWindowManager contextWindowManager) throws IOException {
         this.chatClient = chatClientBuilder.build();
         this.systemBasePrompt = new ClassPathResource("prompts/system-base.txt")
                 .getContentAsString(StandardCharsets.UTF_8);
+        this.modelRouter = modelRouter;
+        this.contextWindowManager = contextWindowManager;
     }
 
     /**
-     * 纯执行：调一次 LLM，返回内容 + token 用量。
+     * 老路径：单 ChatClient、无记忆、单轮。<b>保留不动</b>，供未迁移调用方使用。
      *
-     * @param promptFile  classpath:prompts/ 下的提示词文件名
-     * @param userContent 用户工单内容
-     * @return LLM 响应（内容 + prompt/completion token；token 缺失记 0）
+     * <p>迁移完成后所有调用方应改用 {@link #invoke(String, String, String, String)}。
      */
     public LlmResponse invoke(String promptFile, String userContent) {
+        return doInvoke(chatClient, promptFile, userContent, null);
+    }
+
+    /**
+     * 新路径：按 callName 路由模型，按 runId 隔离记忆。
+     *
+     * @param callName    调用点标识（如 {@code llm.root-cause}），用于 {@link ModelRouter} 选模型
+     * @param promptFile  classpath:prompts/ 下的提示词文件名
+     * @param userContent 用户工单内容
+     * @param runId       工单运行 ID，作为记忆 conversationId；null 表示无记忆（单轮）
+     * @return LLM 响应（内容 + prompt/completion token；token 缺失记 0）
+     */
+    public LlmResponse invoke(String callName, String promptFile, String userContent, String runId) {
+        ChatClient routed = modelRouter.clientFor(callName);
+        return doInvoke(routed, promptFile, userContent, runId);
+    }
+
+    /**
+     * 统一执行：加载 prompt、拼系统提示、按是否带记忆选调用方式、解析 token。
+     *
+     * @param client      路由后的 ChatClient（已挂 advisor 或无）
+     * @param promptFile  提示词文件
+     * @param userContent 工单内容
+     * @param runId       非 null 时设 conversationId 启用记忆；null 走无 advisor 路径
+     */
+    private LlmResponse doInvoke(ChatClient client, String promptFile, String userContent, String runId) {
         try {
             String promptTemplate = loadPrompt(promptFile);
-            ChatResponse chatResponse = chatClient.prompt()
+            // 阶段4：截断超长 userContent，防 context 膨胀（token 成本 + 注意力稀释 + 超窗口）
+            String safeContent = contextWindowManager.truncate(userContent);
+            ChatClient.ChatClientRequestSpec request = client.prompt()
                     .system(systemBasePrompt)
-                    .user(promptTemplate + "\n\n工单内容：\n" + userContent)
-                    .call()
-                    .chatResponse();
+                    .user(promptTemplate + "\n\n工单内容：\n" + safeContent);
+            if (runId != null) {
+                // 设 conversationId：advisor 据此隔离各工单对话历史
+                request = request.advisors(spec -> spec.param(MEMORY_CONVERSATION_ID_KEY, runId));
+            }
+            ChatResponse chatResponse = request.call().chatResponse();
             String content = chatResponse.getResult().getOutput().getText();
+            // 阶段4：透传实际模型名（来自响应 metadata），支撑 token 指标按 model 分维
+            String model = chatResponse.getMetadata().getModel();
             Usage usage = chatResponse.getMetadata().getUsage();
             int promptTokens = usage.getPromptTokens() != null ? usage.getPromptTokens().intValue() : 0;
             int completionTokens = usage.getCompletionTokens() != null ? usage.getCompletionTokens().intValue() : 0;
-            return LlmResponse.of(content, promptTokens, completionTokens);
+            return LlmResponse.of(content, promptTokens, completionTokens, model);
         } catch (IOException ex) {
             // prompt 文件加载失败 = 确定性错误，不可重试
             throw new NonRetryableCallException("Failed to load prompt: " + promptFile, ex);
