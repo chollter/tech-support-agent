@@ -85,7 +85,7 @@ opsmind:
   agent:
     # 阶段2：根因分析策略。linear=原线性流水线(默认)，react=LLM 自主调工具迭代推理。
     # react 模式下 ReactRootCauseStrategy bean 激活，失败自动回退 linear（见 AnalysisWorkflowService.resolveRootCause）。
-    root-cause-strategy: ${ROOT_CAUSE_STRATEGY:linear}
+    root-cause-strategy: ${ROOT_CAUSE_STRATEGY:multi}
     # 阶段3：规划策略。default=现有 SpringAiAgentPlanner(无序动作集合)，plan-execute=有序步骤+每步目标。
     # plan-execute 模式下 PlanExecutePlanner bean 激活，失败回退 SpringAiAgentPlanner。
     # 与 react(根因)互不冲突：plan-execute 管"怎么规划调查步骤"，react 管"根因怎么推理"。
@@ -94,6 +94,13 @@ opsmind:
     routing:
       # 兜底模型：callName 未命中任何前缀时用。沿用 qwen-plus 保证不配也能跑。
       default-model: ${LLM_DEFAULT_MODEL:qwen-plus}
+      # 模型 → 上下文窗口（token）。供 truncate 按目标模型窗口动态截断 userContent。
+      # 未列出的模型用 default-model-window 兜底（保守按小窗口算更安全）。
+      model-windows:
+        qwen-turbo: 8192      # qwen-turbo 窗口 8k
+        qwen-plus: 32768      # qwen-plus 窗口 32k
+        qwen-max: 32768       # qwen-max 窗口 32k
+      default-model-window: ${DEFAULT_MODEL_WINDOW:8192}
       # 多模型路由：简单环节用 qwen-turbo（快+省 token），复杂环节用 qwen-plus（保效果）。
       # 前缀匹配（以 .* 结尾）+ 精确匹配，由 ModelRouter.resolveModel 解析。
       mappings:

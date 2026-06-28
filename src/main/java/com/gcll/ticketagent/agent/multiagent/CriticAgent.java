@@ -90,8 +90,12 @@ public class CriticAgent {
                     .append(String.format("%.2f", f.confidence())).append("\n")
                     .append(f.content()).append("\n\n");
         }
+        // 优化2：用 StructuredOutputParser 自动生成 JSON schema 提示（替代手写），
+        // LLM 输出更规范，且 schema 跟随 CriticJson 类变化自动更新。
+        String formatHint = parser.formatInstructions(CriticJson.class);
         return "【工单内容】\n" + ctx.originalContent()
-                + "\n\n【各专家调查结论】\n" + findingsText;
+                + "\n\n【各专家调查结论】\n" + findingsText
+                + "\n" + formatHint;
     }
 
     /** Critic LLM 输出的 JSON 结构。 */

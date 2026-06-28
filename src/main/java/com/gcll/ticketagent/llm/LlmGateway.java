@@ -99,8 +99,9 @@ public class LlmGateway {
     private LlmResponse doInvoke(ChatClient client, String promptFile, String userContent, String runId) {
         try {
             String promptTemplate = loadPrompt(promptFile);
-            // 阶段4：截断超长 userContent，防 context 膨胀（token 成本 + 注意力稀释 + 超窗口）
-            String safeContent = contextWindowManager.truncate(userContent);
+            // 优化1：按目标模型窗口动态截断 userContent，而非固定字数。
+            // 剩余空间 = 模型窗口 - 系统提示已用 - prompt模板已用 - 安全余量(给输出和误差留)
+            String safeContent = truncateByModelWindow(promptTemplate, userContent, runId);
             ChatClient.ChatClientRequestSpec request = client.prompt()
                     .system(systemBasePrompt)
                     .user(promptTemplate + "\n\n工单内容：\n" + safeContent);
@@ -130,5 +131,35 @@ public class LlmGateway {
 
     private String loadPrompt(String promptFile) throws IOException {
         return new ClassPathResource("prompts/" + promptFile).getContentAsString(StandardCharsets.UTF_8);
+    }
+
+    /**
+     * 按目标模型窗口动态截断 userContent（优化1）。
+     *
+     * <p>剩余 token = 模型窗口 - 系统提示 - prompt模板 - 安全余量。
+     * 系统提示和模板是固定开销，必须预留；安全余量给输出 token + jtokkit 对 qwen 的估算误差。
+     *
+     * @param promptTemplate prompt 模板文本（已加载）
+     * @param userContent    工单原文
+     * @param callName       调用点标识（用于查模型窗口）；null 走老路径固定字数截断
+     */
+    private String truncateByModelWindow(String promptTemplate, String userContent, String callName) {
+        if (callName == null) {
+            // 老路径（invoke(promptFile,content)）无 callName，退回固定字数截断（向后兼容）
+            return contextWindowManager.truncate(userContent);
+        }
+        int modelWindow = modelRouter.windowFor(callName);
+        int systemTokens = contextWindowManager.estimateTokens(systemBasePrompt);
+        int promptTokens = contextWindowManager.estimateTokens(promptTemplate);
+        // 安全余量：留给 completion 输出 + jtokkit 估算误差。取窗口的 25%（至少 1024）
+        int safetyMargin = Math.max(1024, modelWindow / 4);
+        int availableForContent = modelWindow - systemTokens - promptTokens - safetyMargin;
+        if (availableForContent <= 0) {
+            // 极端情况：系统提示+模板已撑满窗口，用保守固定截断
+            log.warn("No token budget left for userContent (window={}, system={}, prompt={}), fallback to char truncate",
+                    modelWindow, systemTokens, promptTokens);
+            return contextWindowManager.truncate(userContent);
+        }
+        return contextWindowManager.truncate(userContent, availableForContent);
     }
 }

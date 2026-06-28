@@ -40,6 +40,15 @@ public class ModelRoutingProperties {
     /** callName（精确或前缀匹配）→ 模型名。 */
     private Map<String, String> mappings = new HashMap<>();
 
+    /**
+     * 模型名 → 上下文窗口（token）。用于 truncate 按目标模型窗口动态截断 userContent，
+     * 而非用固定字数。默认覆盖通义 qwen 主流型号；未列出的模型用 {@link #defaultModelWindow} 兜底。
+     */
+    private Map<String, Integer> modelWindows = new HashMap<>();
+
+    /** 未在 modelWindows 配置的模型的兜底窗口（token）。默认 8192（保守，按小窗口算更安全）。 */
+    private int defaultModelWindow = 8192;
+
     private ChatMemory chatMemory = new ChatMemory();
 
     public String getDefaultModel() {
@@ -56,6 +65,22 @@ public class ModelRoutingProperties {
 
     public void setMappings(Map<String, String> mappings) {
         this.mappings = mappings;
+    }
+
+    public Map<String, Integer> getModelWindows() {
+        return modelWindows;
+    }
+
+    public void setModelWindows(Map<String, Integer> modelWindows) {
+        this.modelWindows = modelWindows;
+    }
+
+    public int getDefaultModelWindow() {
+        return defaultModelWindow;
+    }
+
+    public void setDefaultModelWindow(int defaultModelWindow) {
+        this.defaultModelWindow = defaultModelWindow;
     }
 
     public ChatMemory getChatMemory() {

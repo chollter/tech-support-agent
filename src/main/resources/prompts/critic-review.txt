@@ -8,16 +8,10 @@
 - 不要简单拼接三份结论，要判断和综合
 - 防幻觉：没有证据支撑的根因不要写
 
-## 输出 JSON（不要 markdown 代码块）
-{
-  "consistent": true,
-  "consolidatedRootCause": "综合后的根因结论，2-4句",
-  "confidence": 0.85,
-  "contradictions": []
-}
-
-字段说明：
+## 字段说明
 - consistent: boolean，三位专家结论是否相互印证
 - consolidatedRootCause: 综合根因（不是拼接，是判断后的结论）
 - confidence: 0-1，三方一致上调(0.8+)，有矛盾下调(0.4-0.6)
 - contradictions: 矛盾点列表，无矛盾时为空数组
+
+注意：输出格式要求见输入末尾的 JSON schema 说明（自动生成）。

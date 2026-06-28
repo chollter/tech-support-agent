@@ -78,6 +78,37 @@ public class ContextWindowManager {
     }
 
     /**
+     * 按目标 token 数截断单段内容（优化版：联动模型窗口，而非固定字数）。
+     *
+     * <p>用真实 token 估算（jtokkit）计算内容 token，超 maxTokens 时保留首尾、折叠中间。
+     * 相比 {@link #truncate(String)} 的固定字数，本方法知道目标模型的剩余空间，截断更精准。
+     *
+     * @param content   原始内容
+     * @param maxTokens 该段内容允许的最大 token 数（= 模型窗口 - prompt模板已用 - 安全余量）
+     * @return 截断后的内容；未超限原样返回
+     */
+    public String truncate(String content, int maxTokens) {
+        if (content == null || content.isEmpty() || maxTokens <= 0) {
+            return content;
+        }
+        int tokenCount = tokenEstimator.estimate(content);
+        if (tokenCount <= maxTokens) {
+            return content;
+        }
+        // 按 token 比例算保留的字符数（近似：tokenCount 个 token 对应当前字符数）
+        double ratio = (double) maxTokens / tokenCount;
+        int keepChars = (int) (content.length() * ratio);
+        // 留一半给头部、一半给尾部（首尾注意力更强）
+        int half = keepChars / 2;
+        String truncated = content.substring(0, half)
+                + "\n...[已按 token 截断，原 " + tokenCount + " token → 保留约 " + maxTokens + " token]...\n"
+                + content.substring(content.length() - half);
+        log.debug("Context truncated by tokens, originalTokens={}, maxTokens={}, keptChars={}",
+                tokenCount, maxTokens, truncated.length());
+        return truncated;
+    }
+
+    /**
      * 截断多段拼接内容（如多个工具结果）。每段截断到 maxCharsPerMultiSegment，
      * 总段数超 maxSegments 丢弃尾部。
      *

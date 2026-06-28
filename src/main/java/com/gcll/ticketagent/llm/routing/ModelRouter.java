@@ -76,6 +76,21 @@ public class ModelRouter {
     }
 
     /**
+     * 按 callName 解析目标模型的上下文窗口（token），供 truncate 按模型窗口动态截断。
+     *
+     * <p>先 resolveModel 拿模型名，再查 {@link ModelRoutingProperties#getModelWindows()}。
+     * 未配置的模型用 {@link ModelRoutingProperties#getDefaultModelWindow()} 兜底（保守，按小窗口算更安全）。
+     *
+     * @param callName 调用点标识；null 时用 defaultModel 的窗口
+     * @return 模型上下文窗口（token）
+     */
+    public int windowFor(String callName) {
+        String model = resolveModel(callName);
+        Integer window = properties.getModelWindows().get(model);
+        return window != null ? window : properties.getDefaultModelWindow();
+    }
+
+    /**
      * 按 callName 拿 ChatClient（内部先解析模型，再查/建对应 ChatClient）。
      *
      * @param callName 调用点标识
