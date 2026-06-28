@@ -81,7 +81,7 @@ public class AgentRuntime {
         if (run.getSteps() == null || run.getSteps().isEmpty()) {
             return "unknown";
         }
-        return run.getSteps().get(run.getSteps().size() - 1).getStepName();
+        return run.getSteps().getLast().getStepName();
     }
 
     private AgentRunResponse doExecute(AgentRun run, TicketDraft draft) {

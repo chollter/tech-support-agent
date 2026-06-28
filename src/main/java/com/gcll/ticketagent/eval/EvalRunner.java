@@ -74,6 +74,7 @@ public class EvalRunner {
 
         int passed = 0;
         List<String> failures = new ArrayList<>();
+        List<EvalCaseResult> caseResults = new ArrayList<>();
         Map<String, GroupCounter> groups = new LinkedHashMap<>();
         // judge 探活：不可用则完全跳过质量评测（不影响现有流程断言）
         boolean judgeActive = evalJudgeService.available();
@@ -100,31 +101,14 @@ public class EvalRunner {
                     rootCauseTexts.put(evalCase.id(), rootCauseJson);
                 }
             }
-            boolean casePassed = response.replyType() == evalCase.expectedReplyType()
-                    && response.status() == evalCase.expectedStatus()
-                    && (evalCase.expectedPriority() == null
-                    || (response.analysis() != null && evalCase.expectedPriority().equals(response.analysis().ticket().priority())))
-                    && (evalCase.maxQuestions() == 0
-                    || (response.questions() != null && response.questions().size() <= evalCase.maxQuestions()))
-                    && (!evalCase.needHumanConfirm()
-                    || (response.analysis() != null && response.analysis().humanConfirm().required()))
-                    && stepExpectationPassed(response.runId(), evalCase)
-                    && knowledgeDegradedExpectationPassed(response.runId(), evalCase)
-                    && planExpectationPassed(response.runId(), evalCase)
-                    && toolExpectationPassed(response.runId(), evalCase)
-                    && selectedToolExpectationPassed(response.runId(), evalCase)
-                    && failedToolExpectationPassed(response.runId(), evalCase)
-                    && rootCauseExpectationPassed(response, evalCase)
-                    && semanticFollowUpPassed(response, evalCase)
-                    && issueTypeExpectationPassed(response, evalCase);
+            List<EvalAssertionResult> assertions = evaluateAssertions(response, evalCase);
+            boolean casePassed = assertions.stream().allMatch(EvalAssertionResult::passed);
+            caseResults.add(new EvalCaseResult(evalCase.id(), groupName(evalCase), casePassed, assertions));
             if (casePassed) {
                 passed++;
                 counter.passed++;
             } else {
-                failures.add(evalCase.id() + " failed: replyType=" + response.replyType()
-                        + ", status=" + response.status() + ", priority="
-                        + (response.analysis() == null ? null : response.analysis().ticket().priority())
-                        + ", questions=" + response.questions());
+                failures.add(formatFailure(evalCase, response, assertions));
             }
         }
 
@@ -137,7 +121,142 @@ public class EvalRunner {
                 ))
                 .toList();
         return new EvalReport(DEFAULT_SUITE, cases.size(), passed, cases.size() - passed,
-                groupReports, failures, buildQualitySummary(cases, rootCauseTexts));
+                groupReports, failures, caseResults, buildQualitySummary(cases, rootCauseTexts));
+    }
+
+    private List<EvalAssertionResult> evaluateAssertions(
+            com.gcll.ticketagent.api.dto.AgentRunResponse response,
+            EvalCase evalCase
+    ) {
+        List<EvalAssertionResult> assertions = new ArrayList<>();
+        assertions.add(assertion(
+                "replyType",
+                response.replyType() == evalCase.expectedReplyType(),
+                String.valueOf(evalCase.expectedReplyType()),
+                String.valueOf(response.replyType()),
+                "Response type should match the case expectation."
+        ));
+        assertions.add(assertion(
+                "status",
+                response.status() == evalCase.expectedStatus(),
+                String.valueOf(evalCase.expectedStatus()),
+                String.valueOf(response.status()),
+                "Run status should match the case expectation."
+        ));
+        if (evalCase.expectedPriority() != null) {
+            String actualPriority = response.analysis() == null ? null : response.analysis().ticket().priority();
+            assertions.add(assertion(
+                    "priority",
+                    evalCase.expectedPriority().equals(actualPriority),
+                    evalCase.expectedPriority(),
+                    String.valueOf(actualPriority),
+                    "Ticket priority should match the case expectation."
+            ));
+        }
+        if (evalCase.maxQuestions() > 0) {
+            int questionCount = response.questions() == null ? 0 : response.questions().size();
+            assertions.add(assertion(
+                    "maxQuestions",
+                    response.questions() != null && questionCount <= evalCase.maxQuestions(),
+                    "<= " + evalCase.maxQuestions(),
+                    String.valueOf(questionCount),
+                    "Follow-up question count should stay within the configured limit."
+            ));
+        }
+        if (evalCase.needHumanConfirm()) {
+            boolean actual = response.analysis() != null && response.analysis().humanConfirm().required();
+            assertions.add(assertion(
+                    "humanConfirm",
+                    actual,
+                    "required=true",
+                    "required=" + actual,
+                    "Human confirmation should be required for this case."
+            ));
+        }
+        assertions.add(assertion(
+                "steps",
+                stepExpectationPassed(response.runId(), evalCase),
+                stepExpectationSummary(evalCase),
+                actualSteps(response.runId()).toString(),
+                "Required workflow steps should appear, and skipped steps should stay absent."
+        ));
+        assertions.add(assertion(
+                "knowledgeDegraded",
+                knowledgeDegradedExpectationPassed(response.runId(), evalCase),
+                String.valueOf(evalCase.expectKnowledgeDegraded()),
+                actualKnowledgeDegraded(response.runId()),
+                "Knowledge degraded marker should match the case expectation."
+        ));
+        assertions.add(assertion(
+                "plan",
+                planExpectationPassed(response.runId(), evalCase),
+                "actions=" + evalCase.expectPlanActions() + ", skipped=" + evalCase.expectSkipPlanActions(),
+                actualPlanOutput(response.runId()),
+                "Planner output should include expected actions and skipped actions."
+        ));
+        assertions.add(assertion(
+                "toolLog",
+                toolExpectationPassed(response.runId(), evalCase),
+                "expectToolLog=" + evalCase.expectToolLog(),
+                actualToolNames(response.runId()).toString(),
+                "Tool execution log presence should match the case expectation."
+        ));
+        assertions.add(assertion(
+                "selectedTools",
+                selectedToolExpectationPassed(response.runId(), evalCase),
+                evalCase.expectSelectedTools().toString(),
+                actualToolNames(response.runId()).toString(),
+                "Expected tools should be executed."
+        ));
+        assertions.add(assertion(
+                "failedTools",
+                failedToolExpectationPassed(response.runId(), evalCase),
+                evalCase.expectFailedTools().toString(),
+                actualFailedTools(response.runId()).toString(),
+                "Expected failed tools should be recorded as failed."
+        ));
+        assertions.add(assertion(
+                "rootCauseEvidence",
+                rootCauseExpectationPassed(response, evalCase),
+                "expectRootCauseEvidence=" + evalCase.expectRootCauseEvidence(),
+                actualRootCauseEvidence(response),
+                "Root cause evidence should be present when required."
+        ));
+        assertions.add(assertion(
+                "semanticFollowUp",
+                semanticFollowUpPassed(response, evalCase),
+                "keywords=" + evalCase.questionKeywords(),
+                response.questions() == null ? "[]" : response.questions().toString(),
+                "Follow-up questions should include one of the semantic keywords when required."
+        ));
+        assertions.add(assertion(
+                "issueType",
+                issueTypeExpectationPassed(response, evalCase),
+                String.valueOf(evalCase.expectedIssueType()),
+                actualIssueType(response),
+                "Issue type should match the case expectation when configured."
+        ));
+        return assertions;
+    }
+
+    private EvalAssertionResult assertion(String name, boolean passed, String expected, String actual, String message) {
+        return new EvalAssertionResult(name, passed, expected, actual, message);
+    }
+
+    private String formatFailure(
+            EvalCase evalCase,
+            com.gcll.ticketagent.api.dto.AgentRunResponse response,
+            List<EvalAssertionResult> assertions
+    ) {
+        List<String> failedAssertions = assertions.stream()
+                .filter(assertion -> !assertion.passed())
+                .map(assertion -> assertion.name()
+                        + "(expected=" + assertion.expected()
+                        + ", actual=" + truncate(assertion.actual(), 160) + ")")
+                .toList();
+        return evalCase.id() + " failed: " + String.join("; ", failedAssertions)
+                + ", replyType=" + response.replyType()
+                + ", status=" + response.status();
     }
 
     /**
@@ -190,9 +309,7 @@ public class EvalRunner {
     }
 
     private boolean stepExpectationPassed(String runId, EvalCase evalCase) {
-        var steps = agentRunRepository.findById(runId).orElseThrow().getSteps().stream()
-                .map(AgentStep::getStepName)
-                .toList();
+        var steps = actualSteps(runId);
         if (evalCase.expectGapAnalysis()) {
             if (!steps.contains("INFO_GAP_ANALYSIS") || !steps.contains("COMPLETENESS_DECISION")) {
                 return false;
@@ -212,11 +329,7 @@ public class EvalRunner {
         if (evalCase.expectPlanActions().isEmpty() && evalCase.expectSkipPlanActions().isEmpty()) {
             return true;
         }
-        String planOutput = agentRunRepository.findById(runId).orElseThrow().getSteps().stream()
-                .filter(step -> "AGENT_PLAN".equals(step.getStepName()))
-                .map(AgentStep::getOutputSnapshot)
-                .findFirst()
-                .orElse("");
+        String planOutput = actualPlanOutput(runId);
         boolean actionsOk = evalCase.expectPlanActions().stream().allMatch(planOutput::contains);
         boolean skippedOk = evalCase.expectSkipPlanActions().stream().allMatch(planOutput::contains);
         return actionsOk && skippedOk;
@@ -238,9 +351,7 @@ public class EvalRunner {
         if (evalCase.expectSelectedTools().isEmpty()) {
             return true;
         }
-        List<String> executed = toolExecutionLogRepository.findByRunId(runId).stream()
-                .map(ToolResult::toolName)
-                .toList();
+        List<String> executed = actualToolNames(runId);
         boolean allSelectedPresent = evalCase.expectSelectedTools().stream().allMatch(executed::contains);
         boolean similarSkipped = !evalCase.expectSkipPlanActions().contains("SIMILAR_CASE_SEARCH")
                 || !executed.contains("searchSimilarCases");
@@ -279,8 +390,7 @@ public class EvalRunner {
         if (evalCase.expectedIssueType() == null) {
             return true;
         }
-        return response.analysis() != null
-                && evalCase.expectedIssueType().equals(response.analysis().ticket().issueType());
+        return evalCase.expectedIssueType().equals(actualIssueType(response));
     }
 
     private boolean rootCauseExpectationPassed(com.gcll.ticketagent.api.dto.AgentRunResponse response, EvalCase evalCase) {
@@ -297,6 +407,69 @@ public class EvalRunner {
         return evalCase.scenarioType() == null || evalCase.scenarioType().isBlank()
                 ? "default"
                 : evalCase.scenarioType();
+    }
+
+    private List<String> actualSteps(String runId) {
+        return agentRunRepository.findById(runId).orElseThrow().getSteps().stream()
+                .map(AgentStep::getStepName)
+                .toList();
+    }
+
+    private String actualPlanOutput(String runId) {
+        return agentRunRepository.findById(runId).orElseThrow().getSteps().stream()
+                .filter(step -> "AGENT_PLAN".equals(step.getStepName()))
+                .map(AgentStep::getOutputSnapshot)
+                .findFirst()
+                .orElse("");
+    }
+
+    private String actualKnowledgeDegraded(String runId) {
+        boolean degraded = agentRunRepository.findById(runId).orElseThrow().getSteps().stream()
+                .filter(step -> "KNOWLEDGE_SEARCH".equals(step.getStepName()))
+                .map(AgentStep::getOutputSnapshot)
+                .anyMatch(output -> output != null && output.contains("degraded:"));
+        return String.valueOf(degraded);
+    }
+
+    private List<String> actualToolNames(String runId) {
+        return toolExecutionLogRepository.findByRunId(runId).stream()
+                .map(ToolResult::toolName)
+                .toList();
+    }
+
+    private List<String> actualFailedTools(String runId) {
+        return toolExecutionLogRepository.findByRunId(runId).stream()
+                .filter(result -> !result.success())
+                .map(ToolResult::toolName)
+                .toList();
+    }
+
+    private String actualRootCauseEvidence(com.gcll.ticketagent.api.dto.AgentRunResponse response) {
+        if (response.analysis() == null || response.analysis().rootCause() == null
+                || response.analysis().rootCause().evidence() == null) {
+            return "[]";
+        }
+        return response.analysis().rootCause().evidence().toString();
+    }
+
+    private String actualIssueType(com.gcll.ticketagent.api.dto.AgentRunResponse response) {
+        if (response.analysis() == null || response.analysis().ticket() == null) {
+            return null;
+        }
+        return response.analysis().ticket().issueType();
+    }
+
+    private String stepExpectationSummary(EvalCase evalCase) {
+        return "gap=" + evalCase.expectGapAnalysis()
+                + ", knowledge=" + evalCase.expectKnowledgeSearch()
+                + ", evidence=" + evalCase.expectEvidence();
+    }
+
+    private String truncate(String value, int max) {
+        if (value == null) {
+            return null;
+        }
+        return value.length() <= max ? value : value.substring(0, max) + "...";
     }
 
     private static final class GroupCounter {

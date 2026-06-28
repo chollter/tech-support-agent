@@ -9,6 +9,7 @@ public record EvalReport(
         int failed,
         java.util.List<EvalGroupReport> groups,
         List<String> failures,
+        List<EvalCaseResult> caseResults,
         EvalQualitySummary qualitySummary
 ) {
 }

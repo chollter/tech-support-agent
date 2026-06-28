@@ -1,6 +1,6 @@
 package com.gcll.ticketagent.knowledge.rerank;
 
-import org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -11,7 +11,7 @@ import java.util.List;
  * {@link #active()} 返回 false，审计可据此区分"未 rerank"与"rerank 后"。
  */
 @Service
-@ConditionalOnMissingBean(RerankService.class)
+@ConditionalOnProperty(prefix = "opsmind.rag.rerank", name = "enabled", havingValue = "false", matchIfMissing = true)
 public class NoopRerankService implements RerankService {
 
     @Override
