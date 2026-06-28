@@ -35,14 +35,12 @@ public class OpsQueryService {
     public String queryLogs(String systemName, String moduleName, String query, int limit) {
         LambdaQueryWrapper<OpsLogSampleEntity> wrapper = new LambdaQueryWrapper<>();
         if (hasText(systemName)) {
-            wrapper.and(w -> w.like(OpsLogSampleEntity::getSystemName, systemName)
-                    .or()
-                    .like(OpsLogSampleEntity::getServiceName, systemName));
+            // systemName 变体展开：工单抽取可能是 "Payment service"(空格)，
+            // 库里可能是 "payment-service"(连字符) 或 "支付系统"(中文)，需多变体 OR 匹配
+            applySystemMatchLog(wrapper, systemName);
         }
         if (hasText(moduleName)) {
-            wrapper.and(w -> w.like(OpsLogSampleEntity::getModuleName, moduleName)
-                    .or()
-                    .like(OpsLogSampleEntity::getServiceName, moduleName));
+            applySystemMatchLog(wrapper, moduleName);
         }
         applyLogKeyword(wrapper, query);
         wrapper.orderByDesc(OpsLogSampleEntity::getOccurredAt).last("LIMIT " + Math.max(1, limit));
@@ -56,14 +54,73 @@ public class OpsQueryService {
     public String queryMetrics(String systemName, String moduleName, String query, int limit) {
         LambdaQueryWrapper<OpsMetricSampleEntity> wrapper = new LambdaQueryWrapper<>();
         if (hasText(systemName)) {
-            wrapper.and(w -> w.like(OpsMetricSampleEntity::getSystemName, systemName)
-                    .or()
-                    .like(OpsMetricSampleEntity::getServiceName, systemName));
+            applySystemMatchMetric(wrapper, systemName);
         }
         applyMetricKeyword(wrapper, firstText(moduleName, query));
         wrapper.orderByDesc(OpsMetricSampleEntity::getOccurredAt).last("LIMIT " + Math.max(1, limit));
         List<OpsMetricSampleEntity> metrics = metricMapper.selectList(wrapper);
         return metrics.isEmpty() ? "no metric evidence found" : formatMetrics(metrics);
+    }
+
+    /**
+     * 日志表的 system/service 宽松匹配：对查询词做变体展开（空格/连字符/下划线互换），
+     * OR 匹配 system_name 和 service_name，解决 "Payment service" vs "payment-service" 不命中问题。
+     */
+    private void applySystemMatchLog(LambdaQueryWrapper<OpsLogSampleEntity> wrapper, String keyword) {
+        List<String> variants = nameVariants(keyword);
+        wrapper.and(w -> {
+            boolean first = true;
+            for (String v : variants) {
+                if (first) {
+                    w.like(OpsLogSampleEntity::getSystemName, v)
+                            .or().like(OpsLogSampleEntity::getServiceName, v);
+                    first = false;
+                } else {
+                    w.or().like(OpsLogSampleEntity::getSystemName, v)
+                            .or().like(OpsLogSampleEntity::getServiceName, v);
+                }
+            }
+        });
+    }
+
+    /** 指标表的 system/service 宽松匹配（同 applySystemMatchLog）。 */
+    private void applySystemMatchMetric(LambdaQueryWrapper<OpsMetricSampleEntity> wrapper, String keyword) {
+        List<String> variants = nameVariants(keyword);
+        wrapper.and(w -> {
+            boolean first = true;
+            for (String v : variants) {
+                if (first) {
+                    w.like(OpsMetricSampleEntity::getSystemName, v)
+                            .or().like(OpsMetricSampleEntity::getServiceName, v);
+                    first = false;
+                } else {
+                    w.or().like(OpsMetricSampleEntity::getSystemName, v)
+                            .or().like(OpsMetricSampleEntity::getServiceName, v);
+                }
+            }
+        });
+    }
+
+    /**
+     * 生成服务名变体：归一化分隔符（空格/连字符/下划线互换）+ 原值。
+     * 如 "Payment service" → ["Payment service", "payment-service", "payment_service", "payment service"]
+     * 让 SQL LIKE 能命中不同分隔符写法的 service 名。
+     */
+    private List<String> nameVariants(String name) {
+        if (!hasText(name)) {
+            return List.of();
+        }
+        String trimmed = name.trim();
+        String lower = trimmed.toLowerCase(Locale.ROOT);
+        // 用正则把空格/连字符/下划线统一替换，生成三种分隔符变体
+        String noSep = lower.replaceAll("[\\s\\-_]+", " ");        // 空格
+        String dashSep = lower.replaceAll("[\\s\\-_]+", "-");      // 连字符
+        String underscoreSep = lower.replaceAll("[\\s\\-_]+", "_"); // 下划线
+        // 去重保留：原值 + 三种变体
+        return java.util.stream.Stream.of(trimmed, lower, noSep, dashSep, underscoreSep)
+                .filter(s -> hasText(s) && s.length() >= 2)
+                .distinct()
+                .toList();
     }
 
     private void applyLogKeyword(LambdaQueryWrapper<OpsLogSampleEntity> wrapper, String query) {
