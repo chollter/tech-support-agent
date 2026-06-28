@@ -28,14 +28,8 @@ public class RelationalKnowledgeSearchService implements KnowledgeSearchService 
         Set<String> queryTokens = tokenize(lowerQuery);
 
         for (KnowledgeDocumentEntity doc : documents) {
-            if (systemName != null && doc.getSystemName() != null
-                    && !doc.getSystemName().contains(systemName) && !systemName.contains(doc.getSystemName())) {
-                continue;
-            }
-            if (moduleName != null && doc.getModuleName() != null
-                    && !doc.getModuleName().contains(moduleName) && !moduleName.contains(doc.getModuleName())) {
-                continue;
-            }
+            // 不硬过滤 system/module：中英文别名（Payment service vs 支付系统）会误杀，
+            // 改由 scoreDocument 打分体现相关度（匹配上的加分，不匹配的不丢弃）
             double score = scoreDocument(doc, lowerQuery, queryTokens, systemName, moduleName, issueType);
             if (score > 0) {
                 hits.add(new KnowledgeHit(

@@ -32,3 +32,8 @@ spring:
 opsmind:
   redisson:
     enabled: false
+  # 测试环境关闭 pgvector：H2 不支持 CREATE EXTENSION vector 语法，
+  # 测试不依赖向量检索（走 mock/关键词），避免 PgVectorStoreConfig 激活导致上下文加载失败。
+  vectorstore:
+    pgvector:
+      enabled: false

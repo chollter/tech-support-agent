@@ -83,23 +83,17 @@ public class VectorKnowledgeSearchService implements KnowledgeSearchService {
         return sb.isEmpty() ? "故障工单" : sb.toString();
     }
 
+    /**
+     * 宽松匹配：systemName/moduleName 不一致时不硬过滤掉。
+     *
+     * <p>原因：工单抽取的 affectedSystem 可能是英文（如 "Payment service"），知识库的 systemName
+     * 可能是中文（如 "支付系统"），中英文别名差异下 contains 匹配会误杀相关文档。
+     * 向量相似度 + rerank 已保证语义相关性，systemName 只在能匹配上时作辅助（降权由 rerank 处理），
+     * 不匹配时不丢弃——避免"召回到了却被过滤清空"的问题。
+     */
     private boolean matchesFilter(Map<String, Object> meta, String systemName, String moduleName) {
-        if (systemName != null && !systemName.isBlank()) {
-            String docSystem = stringMeta(meta, "systemName");
-            if (!docSystem.isBlank()
-                    && !docSystem.contains(systemName)
-                    && !systemName.contains(docSystem)) {
-                return false;
-            }
-        }
-        if (moduleName != null && !moduleName.isBlank()) {
-            String docModule = stringMeta(meta, "moduleName");
-            if (!docModule.isBlank()
-                    && !docModule.contains(moduleName)
-                    && !moduleName.contains(docModule)) {
-                return false;
-            }
-        }
+        // 不再硬过滤：向量检索已按相似度召回，system/module 仅作辅助参考，不匹配也保留
+        // （中英文别名如 "Payment service" vs "支付系统" 不应导致相关文档被丢弃）
         return true;
     }
 

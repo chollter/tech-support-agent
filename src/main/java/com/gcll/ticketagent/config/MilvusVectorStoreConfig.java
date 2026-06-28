@@ -5,7 +5,6 @@ import io.milvus.param.ConnectParam;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.ai.vectorstore.milvus.MilvusVectorStore;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -15,7 +14,6 @@ import java.util.concurrent.TimeUnit;
 
 @Configuration
 @Profile("milvus")
-@ConditionalOnBean(EmbeddingModel.class)
 public class MilvusVectorStoreConfig {
 
     @Bean

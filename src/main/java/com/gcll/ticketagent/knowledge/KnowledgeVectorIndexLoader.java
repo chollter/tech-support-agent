@@ -11,6 +11,8 @@ import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.stereotype.Component;
 
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -46,12 +48,17 @@ public class KnowledgeVectorIndexLoader implements ApplicationRunner {
 
     private Document toDocument(KnowledgeDocumentEntity entity) {
         Map<String, Object> metadata = new HashMap<>();
+        metadata.put("knowledgeDocumentId", entity.getId());
         metadata.put("sourceId", entity.getSourceId());
         metadata.put("sourceType", entity.getSourceType());
         metadata.put("title", entity.getTitle());
         metadata.put("systemName", entity.getSystemName() == null ? "" : entity.getSystemName());
         metadata.put("moduleName", entity.getModuleName() == null ? "" : entity.getModuleName());
         String text = entity.getTitle() + "\n" + entity.getContent();
-        return new Document(entity.getId(), text, metadata);
+        return new Document(vectorDocumentId(entity.getId()), text, metadata);
+    }
+
+    private String vectorDocumentId(String businessId) {
+        return UUID.nameUUIDFromBytes(businessId.getBytes(StandardCharsets.UTF_8)).toString();
     }
 }

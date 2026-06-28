@@ -47,4 +47,13 @@ public class KnowledgeController {
     public List<KnowledgeDocumentDto> recent(@RequestParam(defaultValue = "20") int limit) {
         return knowledgeIngestionService.recent(limit);
     }
+
+    /**
+     * 重新向量化所有已入库文档。数据修复用：pgvector 后装 / 向量库重建后调用。
+     * 调用方式：POST /api/knowledge/reindex，无请求体。
+     */
+    @PostMapping("/reindex")
+    public int reindex() {
+        return knowledgeIngestionService.reindexAll();
+    }
 }

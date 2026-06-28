@@ -6,6 +6,8 @@ import com.gcll.ticketagent.api.dto.KnowledgeDocumentDto;
 import com.gcll.ticketagent.api.dto.KnowledgeImportResponse;
 import com.gcll.ticketagent.persistence.entity.KnowledgeDocumentEntity;
 import com.gcll.ticketagent.persistence.repository.KnowledgeDocumentRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.beans.factory.ObjectProvider;
@@ -23,6 +25,7 @@ import java.util.UUID;
 @Service
 public class KnowledgeIngestionService {
 
+    private static final Logger log = LoggerFactory.getLogger(KnowledgeIngestionService.class);
     private static final int MAX_DOCUMENT_BYTES = 512 * 1024;
     private static final int CHUNK_SIZE = 900;
     private static final int CHUNK_OVERLAP = 120;
@@ -96,6 +99,29 @@ public class KnowledgeIngestionService {
         return knowledgeDocumentRepository.findRecent(limit).stream().map(this::toDto).toList();
     }
 
+    /**
+     * 重新向量化所有已入库文档（数据修复用）。
+     *
+     * <p>场景：pgvector 扩展后装、向量库重建、或文档入库时 VectorStore bean 不可用导致未向量化。
+     * 把 knowledge_document 表里所有文档重新灌进 vector_store，供 RAG 检索。
+     *
+     * @return 重新索引的文档数；VectorStore 不可用时返回 -1
+     */
+    public int reindexAll() {
+        VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
+        if (vectorStore == null) {
+            log.warn("Reindex skipped: VectorStore bean not available. Check EmbeddingModel bean, vector store config, and startup diagnostics.");
+            return -1;
+        }
+        List<KnowledgeDocumentEntity> all = knowledgeDocumentRepository.findAll();
+        if (all.isEmpty()) {
+            return 0;
+        }
+        vectorStore.add(all.stream().map(this::toVectorDocument).toList());
+        log.info("Reindexed {} documents into vector store", all.size());
+        return all.size();
+    }
+
     private boolean indexVectorStore(List<KnowledgeDocumentEntity> documents) {
         VectorStore vectorStore = vectorStoreProvider.getIfAvailable();
         if (vectorStore == null || documents.isEmpty()) {
@@ -107,13 +133,18 @@ public class KnowledgeIngestionService {
 
     private Document toVectorDocument(KnowledgeDocumentEntity entity) {
         Map<String, Object> metadata = new HashMap<>();
+        metadata.put("knowledgeDocumentId", entity.getId());
         metadata.put("sourceId", entity.getSourceId());
         metadata.put("sourceType", entity.getSourceType());
         metadata.put("title", entity.getTitle());
         metadata.put("systemName", entity.getSystemName() == null ? "" : entity.getSystemName());
         metadata.put("moduleName", entity.getModuleName() == null ? "" : entity.getModuleName());
         metadata.put("tags", entity.getTags() == null ? "" : entity.getTags());
-        return new Document(entity.getId(), entity.getTitle() + "\n" + entity.getContent(), metadata);
+        return new Document(vectorDocumentId(entity.getId()), entity.getTitle() + "\n" + entity.getContent(), metadata);
+    }
+
+    private String vectorDocumentId(String businessId) {
+        return UUID.nameUUIDFromBytes(businessId.getBytes(StandardCharsets.UTF_8)).toString();
     }
 
     private KnowledgeDocumentDto toDto(KnowledgeDocumentEntity entity) {
